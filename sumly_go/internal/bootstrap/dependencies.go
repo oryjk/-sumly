@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -51,7 +52,14 @@ func BuildDependencies(ctx context.Context, config Config) (Dependencies, func()
 	appUserHandler := userhttp.NewAppHandler(appUserService)
 	wechatClient := wechat.NewClient(&http.Client{Timeout: 10 * time.Second}, wechatEndpoint, config.WechatAppID, config.WechatAppSecret)
 	wechatLogin := authapplication.NewWechatLogin(wechatClient, userRepository, tokens)
-	userAuthHandler := authhttp.NewHandler(wechatLogin, nil)
+	var devLogin authhttp.DevLoginUseCase
+	if config.DevLoginEnabled {
+		// 纵深防御：dev 登录允许任意 identifier 直接换取 JWT，启用必须在日志中可见。
+		slog.Warn("dev login endpoint is enabled (DEV_LOGIN_ENABLED=true); never enable in production")
+		login := authapplication.NewDevLogin(userRepository, tokens)
+		devLogin = login
+	}
+	userAuthHandler := authhttp.NewHandler(wechatLogin, devLogin)
 
 	return Dependencies{
 		AuthMiddleware: &authMiddleware,
