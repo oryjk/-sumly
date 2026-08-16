@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import { ensureSessionReady, clearSession, loginWithDevIdentifier, useAppSession } from "@/stores/appSession";
 import { isMockEnabled } from "@/mock";
+import NeoInput from "@/components/NeoInput/NeoInput.vue";
 
 const PROFILE_PAGE_PATH = "/pages/user/index";
 
@@ -102,12 +103,7 @@ function openProfile() {
             登录（mock）
           </button>
           <view v-else class="home-dev-login">
-            <input
-              v-model="devIdentifier"
-              class="app-input"
-              placeholder="测试标识，如 test-user-01"
-              maxlength="120"
-            />
+            <NeoInput v-model="devIdentifier" placeholder="测试标识，如 test-user-01" :maxlength="120" />
             <button class="app-primary-button home-action" :disabled="isDevLoggingIn" @click="handleDevLogin">
               {{ isDevLoggingIn ? "登录中..." : "开发登录" }}
             </button>

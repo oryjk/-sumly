@@ -3,6 +3,7 @@ import { computed, ref } from "vue";
 import { onShow } from "@dcloudio/uni-app";
 import { updateMyProfile } from "@/api/user";
 import { applyCurrentUser, ensureSessionReady, useAppSession } from "@/stores/appSession";
+import NeoInput from "@/components/NeoInput/NeoInput.vue";
 
 const { currentUser, isBootstrapping } = useAppSession();
 
@@ -93,12 +94,7 @@ onShow(() => {
 
       <view class="app-card">
         <view class="app-card-title">修改昵称</view>
-        <input
-          v-model="nicknameDraft"
-          class="app-input"
-          placeholder="输入新昵称"
-          maxlength="120"
-        />
+        <NeoInput v-model="nicknameDraft" placeholder="输入新昵称" :maxlength="120" />
         <button class="app-primary-button profile-save-button" :disabled="isSaving" @click="handleSaveNickname">
           {{ isSaving ? "保存中..." : "保存" }}
         </button>

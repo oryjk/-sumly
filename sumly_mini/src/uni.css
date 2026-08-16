@@ -8,26 +8,42 @@ scroll-view {
   box-sizing: border-box;
 }
 
+button {
+  margin: 0;
+}
+
 button::after {
   border: none;
 }
 
 /* ===== Neo-brutalism 设计令牌 =====
-   粗黑边 + 硬偏移阴影（无模糊）+ 高饱和强调色 + 直角/微圆角。
-   涨跌配色遵守国内习惯：红涨（#ff6b6b）绿跌（#4ade80）。
-   新页面/组件优先复用本文件的全局类，不要另起样式。 */
+   所有视觉值（颜色/边框/阴影/圆角/位移/控件高度）只允许出自这里的
+   --neo-* 变量；新组件与页面禁止硬编码这些值。
+   涨跌配色遵守国内习惯：红涨（--neo-up）绿跌（--neo-down）。
+   桌面端通过在 media query 里重定义变量切换 rpx → px。 */
 
-:root {
+page {
   --neo-bg: #faf3e8;
+  --neo-card: #ffffff;
   --neo-ink: #111111;
+  --neo-muted: #6b6560;
+  --neo-faint: #8a8268;
   --neo-accent: #ffdc58;
   --neo-up: #ff6b6b;
   --neo-down: #4ade80;
-}
 
-page {
-  background: #faf3e8;
-  color: #111111;
+  --neo-border: 3rpx solid #111111;
+  --neo-radius: 8rpx;
+  --neo-shadow-card: 8rpx 8rpx 0 #111111;
+  --neo-shadow-ctl: 6rpx 6rpx 0 #111111;
+  --neo-shadow-pressed: 3rpx 3rpx 0 #111111;
+  --neo-press-shift: 3rpx;
+  --neo-input-h: 88rpx;
+
+  min-height: 100%;
+  background: var(--neo-bg);
+  color: var(--neo-ink);
+  font-family: "PingFang SC", "Helvetica Neue", sans-serif;
 }
 
 .page-container {
@@ -35,18 +51,18 @@ page {
 }
 
 .app-card {
-  background: #ffffff;
-  border: 3rpx solid #111111;
-  border-radius: 8rpx;
+  background: var(--neo-card);
+  border: var(--neo-border);
+  border-radius: var(--neo-radius);
   padding: 32rpx;
   margin-bottom: 24rpx;
-  box-shadow: 8rpx 8rpx 0 #111111;
+  box-shadow: var(--neo-shadow-card);
 }
 
 .app-card-title {
   font-size: 34rpx;
   font-weight: 800;
-  color: #111111;
+  color: var(--neo-ink);
   margin-bottom: 16rpx;
 }
 
@@ -59,75 +75,73 @@ page {
 }
 
 .app-field-label {
-  color: #6b6560;
+  color: var(--neo-muted);
 }
 
 .app-field-value {
-  color: #111111;
+  color: var(--neo-ink);
   font-weight: 600;
 }
 
 .app-primary-button {
-  background: #ffdc58;
-  color: #111111;
-  border: 3rpx solid #111111;
-  border-radius: 8rpx;
+  background: var(--neo-accent);
+  color: var(--neo-ink);
+  border: var(--neo-border);
+  border-radius: var(--neo-radius);
   font-size: 30rpx;
   font-weight: 700;
   padding: 8rpx 0;
-  box-shadow: 6rpx 6rpx 0 #111111;
+  box-shadow: var(--neo-shadow-ctl);
 }
 
 .app-primary-button:active {
-  transform: translate(3rpx, 3rpx);
-  box-shadow: 3rpx 3rpx 0 #111111;
+  transform: translate(var(--neo-press-shift), var(--neo-press-shift));
+  box-shadow: var(--neo-shadow-pressed);
 }
 
 .app-primary-button[disabled] {
   opacity: 0.6;
   transform: none;
-  box-shadow: 3rpx 3rpx 0 #111111;
+  box-shadow: var(--neo-shadow-pressed);
 }
 
 .app-plain-button {
-  background: #ffffff;
-  color: #111111;
-  border: 3rpx solid #111111;
-  border-radius: 8rpx;
+  background: var(--neo-card);
+  color: var(--neo-ink);
+  border: var(--neo-border);
+  border-radius: var(--neo-radius);
   font-size: 30rpx;
   font-weight: 700;
   padding: 8rpx 0;
-  box-shadow: 6rpx 6rpx 0 #111111;
+  box-shadow: var(--neo-shadow-ctl);
 }
 
 .app-plain-button:active {
-  transform: translate(3rpx, 3rpx);
-  box-shadow: 3rpx 3rpx 0 #111111;
-}
-
-.app-input {
-  background: #ffffff;
-  border: 3rpx solid #111111;
-  border-radius: 8rpx;
-  /* uni-input 默认 height 固定 1.4em 且 overflow:hidden，
-     必须显式给定高度，否则边框和内边距会把内部 input 压到不可点 */
-  height: 88rpx;
-  padding: 0 24rpx;
-  font-size: 28rpx;
-  color: #111111;
+  transform: translate(var(--neo-press-shift), var(--neo-press-shift));
+  box-shadow: var(--neo-shadow-pressed);
 }
 
 .app-hint {
   font-size: 24rpx;
-  color: #8a8268;
+  color: var(--neo-faint);
   margin-top: 16rpx;
   line-height: 1.6;
 }
 
 /* ===== H5 桌面端适配 =====
    uni-app H5 下 750rpx = 100vw，桌面视口会等比放大一切；
-   宽屏时收敛为居中的手机宽度列，并切换为 px 尺寸。 */
+   宽屏时收敛为居中的手机宽度列，并通过重定义令牌切换为 px。 */
 @media (min-width: 768px) {
+  page {
+    --neo-border: 3px solid #111111;
+    --neo-radius: 6px;
+    --neo-shadow-card: 8px 8px 0 #111111;
+    --neo-shadow-ctl: 5px 5px 0 #111111;
+    --neo-shadow-pressed: 3px 3px 0 #111111;
+    --neo-press-shift: 2px;
+    --neo-input-h: 44px;
+  }
+
   .page-container {
     max-width: 480px;
     margin: 0 auto;
@@ -135,11 +149,8 @@ page {
   }
 
   .app-card {
-    border-width: 3px;
-    border-radius: 6px;
     padding: 24px;
     margin-bottom: 20px;
-    box-shadow: 8px 8px 0 #111111;
   }
 
   .app-card-title {
@@ -153,25 +164,8 @@ page {
 
   .app-primary-button,
   .app-plain-button {
-    border-width: 3px;
-    border-radius: 6px;
     font-size: 16px;
     padding: 6px 0;
-    box-shadow: 5px 5px 0 #111111;
-  }
-
-  .app-primary-button:active,
-  .app-plain-button:active {
-    transform: translate(2px, 2px);
-    box-shadow: 3px 3px 0 #111111;
-  }
-
-  .app-input {
-    border-width: 3px;
-    border-radius: 6px;
-    height: 44px;
-    font-size: 15px;
-    padding: 0 14px;
   }
 
   .app-hint {

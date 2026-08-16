@@ -28,25 +28,6 @@ onPageNotFound((options) => {
 </script>
 
 <style>
+/* 全局样式与设计令牌统一收敛在 uni.css */
 @import "./uni.css";
-
-page {
-  min-height: 100%;
-  background: #faf3e8;
-  color: #111111;
-  font-family: "PingFang SC", "Helvetica Neue", sans-serif;
-}
-
-view,
-text,
-button,
-input,
-textarea,
-scroll-view {
-  box-sizing: border-box;
-}
-
-button {
-  margin: 0;
-}
 </style>
