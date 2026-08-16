@@ -95,7 +95,7 @@ onShow(() => {
         <view class="app-card-title">修改昵称</view>
         <input
           v-model="nicknameDraft"
-          class="profile-nickname-input"
+          class="app-input"
           placeholder="输入新昵称"
           maxlength="120"
         />
@@ -108,14 +108,13 @@ onShow(() => {
 </template>
 
 <style scoped>
-.profile-nickname-input {
-  background: #f3f4f6;
-  border-radius: 12rpx;
-  padding: 16rpx 24rpx;
-  font-size: 28rpx;
-}
-
 .profile-save-button {
   margin-top: 24rpx;
+}
+
+@media (min-width: 768px) {
+  .profile-save-button {
+    margin-top: 16px;
+  }
 }
 </style>

@@ -32,8 +32,8 @@ onPageNotFound((options) => {
 
 page {
   min-height: 100%;
-  background: #f3f4f6;
-  color: #111827;
+  background: #faf3e8;
+  color: #111111;
   font-family: "PingFang SC", "Helvetica Neue", sans-serif;
 }
 

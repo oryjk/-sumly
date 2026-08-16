@@ -12,22 +12,41 @@ button::after {
   border: none;
 }
 
+/* ===== Neo-brutalism 设计令牌 =====
+   粗黑边 + 硬偏移阴影（无模糊）+ 高饱和强调色 + 直角/微圆角。
+   涨跌配色遵守国内习惯：红涨（#ff6b6b）绿跌（#4ade80）。
+   新页面/组件优先复用本文件的全局类，不要另起样式。 */
+
+:root {
+  --neo-bg: #faf3e8;
+  --neo-ink: #111111;
+  --neo-accent: #ffdc58;
+  --neo-up: #ff6b6b;
+  --neo-down: #4ade80;
+}
+
+page {
+  background: #faf3e8;
+  color: #111111;
+}
+
 .page-container {
   padding: 32rpx;
 }
 
 .app-card {
   background: #ffffff;
-  border-radius: 20rpx;
+  border: 3rpx solid #111111;
+  border-radius: 8rpx;
   padding: 32rpx;
   margin-bottom: 24rpx;
-  box-shadow: 0 2rpx 12rpx rgba(17, 24, 39, 0.04);
+  box-shadow: 8rpx 8rpx 0 #111111;
 }
 
 .app-card-title {
-  font-size: 30rpx;
-  font-weight: 600;
-  color: #111827;
+  font-size: 34rpx;
+  font-weight: 800;
+  color: #111111;
   margin-bottom: 16rpx;
 }
 
@@ -40,32 +59,118 @@ button::after {
 }
 
 .app-field-label {
-  color: #6b7280;
+  color: #6b6560;
 }
 
 .app-field-value {
-  color: #111827;
+  color: #111111;
+  font-weight: 600;
 }
 
 .app-primary-button {
-  background: #111827;
-  color: #ffffff;
-  border-radius: 16rpx;
+  background: #ffdc58;
+  color: #111111;
+  border: 3rpx solid #111111;
+  border-radius: 8rpx;
   font-size: 30rpx;
+  font-weight: 700;
   padding: 8rpx 0;
+  box-shadow: 6rpx 6rpx 0 #111111;
+}
+
+.app-primary-button:active {
+  transform: translate(3rpx, 3rpx);
+  box-shadow: 3rpx 3rpx 0 #111111;
+}
+
+.app-primary-button[disabled] {
+  opacity: 0.6;
+  transform: none;
+  box-shadow: 3rpx 3rpx 0 #111111;
 }
 
 .app-plain-button {
-  background: #f3f4f6;
-  color: #374151;
-  border-radius: 16rpx;
+  background: #ffffff;
+  color: #111111;
+  border: 3rpx solid #111111;
+  border-radius: 8rpx;
   font-size: 30rpx;
+  font-weight: 700;
   padding: 8rpx 0;
+  box-shadow: 6rpx 6rpx 0 #111111;
+}
+
+.app-plain-button:active {
+  transform: translate(3rpx, 3rpx);
+  box-shadow: 3rpx 3rpx 0 #111111;
+}
+
+.app-input {
+  background: #ffffff;
+  border: 3rpx solid #111111;
+  border-radius: 8rpx;
+  padding: 16rpx 24rpx;
+  font-size: 28rpx;
+  color: #111111;
 }
 
 .app-hint {
   font-size: 24rpx;
-  color: #9ca3af;
+  color: #8a8268;
   margin-top: 16rpx;
   line-height: 1.6;
+}
+
+/* ===== H5 桌面端适配 =====
+   uni-app H5 下 750rpx = 100vw，桌面视口会等比放大一切；
+   宽屏时收敛为居中的手机宽度列，并切换为 px 尺寸。 */
+@media (min-width: 768px) {
+  .page-container {
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  .app-card {
+    border-width: 3px;
+    border-radius: 6px;
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: 8px 8px 0 #111111;
+  }
+
+  .app-card-title {
+    font-size: 22px;
+  }
+
+  .app-field-row {
+    font-size: 15px;
+    padding: 10px 0;
+  }
+
+  .app-primary-button,
+  .app-plain-button {
+    border-width: 3px;
+    border-radius: 6px;
+    font-size: 16px;
+    padding: 6px 0;
+    box-shadow: 5px 5px 0 #111111;
+  }
+
+  .app-primary-button:active,
+  .app-plain-button:active {
+    transform: translate(2px, 2px);
+    box-shadow: 3px 3px 0 #111111;
+  }
+
+  .app-input {
+    border-width: 3px;
+    border-radius: 6px;
+    font-size: 15px;
+    padding: 10px 14px;
+  }
+
+  .app-hint {
+    font-size: 13px;
+  }
 }

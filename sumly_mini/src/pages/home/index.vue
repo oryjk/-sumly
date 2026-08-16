@@ -104,7 +104,7 @@ function openProfile() {
           <view v-else class="home-dev-login">
             <input
               v-model="devIdentifier"
-              class="home-dev-input"
+              class="app-input"
               placeholder="测试标识，如 test-user-01"
               maxlength="120"
             />
@@ -136,15 +136,16 @@ function openProfile() {
 
 <style scoped>
 .home-title {
-  font-size: 44rpx;
-  font-weight: 700;
-  color: #111827;
+  font-size: 52rpx;
+  font-weight: 900;
+  color: #111111;
+  letter-spacing: 2rpx;
 }
 
 .home-subtitle {
   margin-top: 8rpx;
   font-size: 26rpx;
-  color: #6b7280;
+  color: #6b6560;
 }
 
 .home-action {
@@ -152,17 +153,26 @@ function openProfile() {
 }
 
 .home-error {
-  color: #dc2626;
+  color: #ff6b6b;
+  font-weight: 600;
 }
 
 .home-dev-login {
   margin-top: 24rpx;
 }
 
-.home-dev-input {
-  background: #f3f4f6;
-  border-radius: 12rpx;
-  padding: 16rpx 24rpx;
-  font-size: 28rpx;
+@media (min-width: 768px) {
+  .home-title {
+    font-size: 28px;
+  }
+
+  .home-subtitle {
+    font-size: 14px;
+  }
+
+  .home-action,
+  .home-dev-login {
+    margin-top: 16px;
+  }
 }
 </style>
