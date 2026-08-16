@@ -74,7 +74,12 @@ onShow(() => {
 
     <view v-else-if="!isLoggedIn" class="app-card">
       <view class="app-card-title">未登录</view>
+      <!-- #ifndef H5 -->
       <view class="app-hint">请返回首页点击「微信登录」后再查看资料。</view>
+      <!-- #endif -->
+      <!-- #ifdef H5 -->
+      <view class="app-hint">请返回首页使用开发登录后再查看资料。</view>
+      <!-- #endif -->
     </view>
 
     <template v-else>

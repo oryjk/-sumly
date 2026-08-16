@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import { ensureSessionReady, clearSession, useAppSession } from "@/stores/appSession";
+import { computed, ref } from "vue";
+import { ensureSessionReady, clearSession, loginWithDevIdentifier, useAppSession } from "@/stores/appSession";
 import { isMockEnabled } from "@/mock";
 
 const PROFILE_PAGE_PATH = "/pages/user/index";
@@ -23,6 +23,29 @@ async function handleLogin() {
     uni.$emit("session:login-completed");
   } catch (error) {
     uni.showToast({ title: error instanceof Error ? error.message : "登录失败", icon: "none" });
+  }
+}
+
+const devIdentifier = ref("");
+const isDevLoggingIn = ref(false);
+
+async function handleDevLogin() {
+  const identifier = devIdentifier.value.trim();
+  if (!identifier) {
+    uni.showToast({ title: "请输入测试标识", icon: "none" });
+    return;
+  }
+  if (isDevLoggingIn.value) {
+    return;
+  }
+  isDevLoggingIn.value = true;
+  try {
+    await loginWithDevIdentifier(identifier);
+    uni.$emit("session:login-completed");
+  } catch (error) {
+    uni.showToast({ title: error instanceof Error ? error.message : "登录失败", icon: "none" });
+  } finally {
+    isDevLoggingIn.value = false;
   }
 }
 
@@ -68,18 +91,45 @@ function openProfile() {
 
         <view v-if="bootstrapError" class="app-hint home-error">{{ bootstrapError }}</view>
 
+        <!-- #ifndef H5 -->
         <button v-if="!isLoggedIn" class="app-primary-button home-action" @click="handleLogin">
           微信登录
         </button>
+        <!-- #endif -->
+        <!-- #ifdef H5 -->
+        <template v-if="!isLoggedIn">
+          <button v-if="isMockEnabled()" class="app-primary-button home-action" @click="handleLogin">
+            登录（mock）
+          </button>
+          <view v-else class="home-dev-login">
+            <input
+              v-model="devIdentifier"
+              class="home-dev-input"
+              placeholder="测试标识，如 test-user-01"
+              maxlength="120"
+            />
+            <button class="app-primary-button home-action" :disabled="isDevLoggingIn" @click="handleDevLogin">
+              {{ isDevLoggingIn ? "登录中..." : "开发登录" }}
+            </button>
+          </view>
+        </template>
+        <!-- #endif -->
         <template v-else>
           <button class="app-primary-button home-action" @click="openProfile">查看我的资料</button>
           <button class="app-plain-button home-action" @click="handleLogout">退出登录</button>
         </template>
       </template>
 
+      <!-- #ifndef H5 -->
       <view class="app-hint">
         {{ isMockEnabled() ? "当前为 mock 模式（VITE_USE_MOCK=true），登录不请求真实后端。" : "登录走 sumly_go 后端 POST /api/v1/app/auth/wechat/login。" }}
       </view>
+      <!-- #endif -->
+      <!-- #ifdef H5 -->
+      <view class="app-hint">
+        {{ isMockEnabled() ? "当前为 mock 模式（VITE_USE_MOCK=true），登录不请求真实后端。" : "H5 开发登录走 POST /api/v1/app/auth/dev/login（后端需 DEV_LOGIN_ENABLED=true）。" }}
+      </view>
+      <!-- #endif -->
     </view>
   </view>
 </template>
@@ -103,5 +153,16 @@ function openProfile() {
 
 .home-error {
   color: #dc2626;
+}
+
+.home-dev-login {
+  margin-top: 24rpx;
+}
+
+.home-dev-input {
+  background: #f3f4f6;
+  border-radius: 12rpx;
+  padding: 16rpx 24rpx;
+  font-size: 28rpx;
 }
 </style>
