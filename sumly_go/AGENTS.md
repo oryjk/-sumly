@@ -26,6 +26,8 @@ sumly 小程序的 Go 后端。架构与工程约束沿用 `registration_system_
 - SQL、pgx、sqlc 只能出现在 `adapters/postgres` 和数据库工具中。
 - handler 只做协议适配、Actor 提取、DTO 转换和错误映射。
 - 用户端与管理端使用独立的 `/api/v1/app`、`/api/v1/admin` 路由组（管理端尚未实现）。
+- 开发测试专用登录：`POST /api/v1/app/auth/dev/login`（identifier 加 `dev-` 前缀当 openid，
+  自动注册并签发 JWT），仅 `DEV_LOGIN_ENABLED=true` 时注册路由，生产环境必须保持关闭。
 - 响应统一使用 `{ code, message, data }` envelope（`shared/http/response.go`）。
 
 ## 开发约束

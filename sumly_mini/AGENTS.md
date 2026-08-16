@@ -38,6 +38,9 @@ src/
 - 新增接口优先放入 `src/api/<domain>.ts`，并补充对应类型（`src/types/`）。
 - 登录态只通过 `src/stores/appSession.ts` 与 `src/utils/authStorage.ts` 读写，
   页面不要直接操作 token 存储。
+- H5 开发测试登录：首页在 `#ifdef H5` 下提供"标识 + 开发登录"入口
+  （`loginWithDevIdentifier`），走后端 `/auth/dev/login`（需 `DEV_LOGIN_ENABLED=true`）；
+  mock 模式下不渲染该入口。
 - 修改核心流程时，确认字段与后端真实 JSON 一致；后端契约见 `../sumly_go/docs/openapi.yaml`。
 - 小程序环境差异较多，避免随意引入仅适用于 Web 的 API。
 - 页面 SFC 默认只承担页面编排：生命周期、加载状态、页面级表单状态、导航和组件事件 wiring。
