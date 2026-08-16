@@ -51,7 +51,7 @@ func BuildDependencies(ctx context.Context, config Config) (Dependencies, func()
 	appUserHandler := userhttp.NewAppHandler(appUserService)
 	wechatClient := wechat.NewClient(&http.Client{Timeout: 10 * time.Second}, wechatEndpoint, config.WechatAppID, config.WechatAppSecret)
 	wechatLogin := authapplication.NewWechatLogin(wechatClient, userRepository, tokens)
-	userAuthHandler := authhttp.NewHandler(wechatLogin)
+	userAuthHandler := authhttp.NewHandler(wechatLogin, nil)
 
 	return Dependencies{
 		AuthMiddleware: &authMiddleware,

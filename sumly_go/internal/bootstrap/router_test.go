@@ -40,7 +40,7 @@ func TestHealthRoute(t *testing.T) {
 
 func TestWechatLoginRouteIsPublicAndVersioned(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	router := NewRouter(Dependencies{UserAuth: authhttp.NewHandler(routerWechatLogin{})})
+	router := NewRouter(Dependencies{UserAuth: authhttp.NewHandler(routerWechatLogin{}, nil)})
 
 	unauthorized := httptest.NewRecorder()
 	router.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodPost, "/api/v1/app/auth/wechat/login", nil))
@@ -183,4 +183,27 @@ type routerActiveUsers struct {
 
 func (r routerActiveUsers) EnsureActive(context.Context, int64) error {
 	return r.err
+}
+
+func TestDevLoginRouteRegisteredOnlyWhenEnabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	enabled := NewRouter(Dependencies{UserAuth: authhttp.NewHandler(routerWechatLogin{}, routerDevLogin{})})
+	enabledResp := httptest.NewRecorder()
+	enabled.ServeHTTP(enabledResp, httptest.NewRequest(http.MethodPost, "/api/v1/app/auth/dev/login", nil))
+	if enabledResp.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected dev login route to exist with validation status %d, got %d", http.StatusUnprocessableEntity, enabledResp.Code)
+	}
+
+	disabled := NewRouter(Dependencies{UserAuth: authhttp.NewHandler(routerWechatLogin{}, nil)})
+	disabledResp := httptest.NewRecorder()
+	disabled.ServeHTTP(disabledResp, httptest.NewRequest(http.MethodPost, "/api/v1/app/auth/dev/login", nil))
+	if disabledResp.Code != http.StatusNotFound {
+		t.Fatalf("expected dev login route to be absent (404), got %d", disabledResp.Code)
+	}
+}
+
+type routerDevLogin struct{}
+
+func (routerDevLogin) Execute(context.Context, string) (authapplication.DevLoginResult, error) {
+	return authapplication.DevLoginResult{}, nil
 }

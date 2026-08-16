@@ -14,12 +14,21 @@ type WechatLoginUseCase interface {
 	Execute(context.Context, string) (application.WechatLoginResult, error)
 }
 
+type DevLoginUseCase interface {
+	Execute(context.Context, string) (application.DevLoginResult, error)
+}
+
 type Handler struct {
 	wechatLogin WechatLoginUseCase
+	devLogin    DevLoginUseCase
 }
 
 type WechatLoginRequest struct {
 	JSCode string `json:"js_code" binding:"required"`
+}
+
+type DevLoginRequest struct {
+	Identifier string `json:"identifier" binding:"required"`
 }
 
 type WechatLoginResponse struct {
@@ -36,8 +45,8 @@ type UserResponse struct {
 	Status      string  `json:"status"`
 }
 
-func NewHandler(wechatLogin WechatLoginUseCase) *Handler {
-	return &Handler{wechatLogin: wechatLogin}
+func NewHandler(wechatLogin WechatLoginUseCase, devLogin DevLoginUseCase) *Handler {
+	return &Handler{wechatLogin: wechatLogin, devLogin: devLogin}
 }
 
 func (h *Handler) WechatLogin(c *gin.Context) {
@@ -64,6 +73,26 @@ func mapUserResponse(user userdomain.User) UserResponse {
 	}
 }
 
+func (h *Handler) DevLogin(c *gin.Context) {
+	var request DevLoginRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		sharedhttpapi.WriteError(c, sharederror.New(sharederror.KindValidation, "开发登录标识不能为空"))
+		return
+	}
+	result, err := h.devLogin.Execute(c.Request.Context(), request.Identifier)
+	if err != nil {
+		sharedhttpapi.WriteError(c, err)
+		return
+	}
+	sharedhttpapi.WriteSuccess(c, WechatLoginResponse{
+		Token: result.Token,
+		User:  mapUserResponse(result.User),
+	})
+}
+
 func (h *Handler) RegisterPublicRoutes(group *gin.RouterGroup) {
 	group.POST("/auth/wechat/login", h.WechatLogin)
+	if h.devLogin != nil {
+		group.POST("/auth/dev/login", h.DevLogin)
+	}
 }
