@@ -1,5 +1,5 @@
 import { ref } from "vue";
-import { wechatLogin } from "@/api/auth";
+import { devLogin, wechatLogin } from "@/api/auth";
 import { getCurrentUser } from "@/api/user";
 import { isMockEnabled } from "@/mock";
 import { resolveSessionBootstrapMode } from "@/stores/bootstrapStrategy";
@@ -146,6 +146,23 @@ export async function ensureSessionReady(force = false) {
   })();
 
   return bootstrapPromise;
+}
+
+/**
+ * H5 开发测试登录：identifier 换取真实 JWT（后端需 DEV_LOGIN_ENABLED=true）。
+ * 仅供开发调试；mock 模式与小程序端不使用。
+ */
+export async function loginWithDevIdentifier(identifier: string) {
+  // 使任何进行中的 bootstrap 失效，避免旧会话覆盖新登录结果
+  sessionVersion += 1;
+  clearManualLogout();
+  const loginVersion = sessionVersion;
+
+  const result = await devLogin(identifier);
+  assertSessionVersion(loginVersion);
+  setAccessToken(result.token);
+  assertSessionVersion(loginVersion);
+  currentUser.value = result.user;
 }
 
 export function applyCurrentUser(user: AppUser) {

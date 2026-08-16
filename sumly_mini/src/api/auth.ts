@@ -8,3 +8,11 @@ export function wechatLogin(jsCode: string) {
     data: { js_code: jsCode },
   });
 }
+
+export function devLogin(identifier: string) {
+  return requestApi<LoginResponse>({
+    url: "/auth/dev/login",
+    method: "POST",
+    data: { identifier },
+  });
+}
