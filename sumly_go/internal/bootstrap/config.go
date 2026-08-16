@@ -23,6 +23,7 @@ type Config struct {
 	WechatAppID     string
 	WechatAppSecret string
 	AppEnvironment  AppEnvironment
+	DevLoginEnabled bool
 }
 
 func LoadConfig() (Config, error) {
@@ -34,6 +35,7 @@ func LoadConfig() (Config, error) {
 		WechatAppID:     os.Getenv("WECHAT_APP_ID"),
 		WechatAppSecret: os.Getenv("WECHAT_APP_SECRET"),
 		AppEnvironment:  parseAppEnvironment(os.Getenv("APP_ENV")),
+		DevLoginEnabled: os.Getenv("DEV_LOGIN_ENABLED") == "true",
 	}
 
 	for name, value := range map[string]string{
