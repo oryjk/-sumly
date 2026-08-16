@@ -1,0 +1,250 @@
+openapi: 3.0.3
+info:
+  title: Sumly Go API
+  version: 1.0.0
+  description: sumly 小程序 Go 后端 HTTP API。
+servers:
+  - url: http://127.0.0.1:18090
+    description: 本地开发服务
+tags:
+  - name: System
+  - name: App Auth
+  - name: App Users
+
+x-bearer-security: &bearerSecurity
+  - bearerAuth: []
+x-standard-errors: &standardErrors
+  "401":
+    $ref: "#/components/responses/Unauthorized"
+  "403":
+    $ref: "#/components/responses/Forbidden"
+  "404":
+    $ref: "#/components/responses/NotFound"
+  "409":
+    $ref: "#/components/responses/Conflict"
+  "422":
+    $ref: "#/components/responses/ValidationError"
+  "500":
+    $ref: "#/components/responses/InternalError"
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      tags: [System]
+      summary: 健康检查
+      security: []
+      responses:
+        "200":
+          description: 服务正常
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /api/v1/app/auth/wechat/login:
+    post:
+      operationId: loginAppWithWechat
+      tags: [App Auth]
+      summary: 微信登录
+      description: 用 wx.login 返回的 js_code 换取 openid；用户不存在时自动注册并签发 JWT。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WechatLoginRequest"
+      responses:
+        "200":
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WechatLoginResponse"
+        "401":
+          description: 微信 code 无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: 请求参数无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/app/users/me:
+    get:
+      operationId: getAppMe
+      tags: [App Users]
+      summary: 获取当前用户资料
+      security: *bearerSecurity
+      responses:
+        "200":
+          description: 当前用户
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileResponse"
+        <<: *standardErrors
+    patch:
+      operationId: updateAppMe
+      tags: [App Users]
+      summary: 更新当前用户资料
+      security: *bearerSecurity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMeRequest"
+      responses:
+        "200":
+          description: 更新后的用户
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileResponse"
+        <<: *standardErrors
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Unauthorized:
+      description: 未登录或凭证无效
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: 无权访问
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: 资源不存在
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Conflict:
+      description: 资源冲突
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ValidationError:
+      description: 参数校验失败
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    InternalError:
+      description: 服务器内部错误
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 0
+        message:
+          type: string
+          example: ok
+        data:
+          type: object
+          properties:
+            status:
+              type: string
+              example: ok
+
+    WechatLoginRequest:
+      type: object
+      required: [js_code]
+      properties:
+        js_code:
+          type: string
+          description: wx.login 返回的临时登录凭证
+
+    WechatLoginResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 0
+        message:
+          type: string
+          example: ok
+        data:
+          type: object
+          properties:
+            token:
+              type: string
+            user:
+              $ref: "#/components/schemas/AppUser"
+
+    UpdateMeRequest:
+      type: object
+      properties:
+        nickname:
+          type: string
+          maxLength: 120
+        real_name:
+          type: string
+          maxLength: 120
+
+    ProfileResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 0
+        message:
+          type: string
+          example: ok
+        data:
+          $ref: "#/components/schemas/AppUser"
+
+    AppUser:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        nickname:
+          type: string
+        avatar_url:
+          type: string
+          nullable: true
+        real_name:
+          type: string
+          nullable: true
+        phone_number:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [active, frozen]
+
+    ErrorResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        data:
+          nullable: true

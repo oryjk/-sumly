@@ -1,0 +1,71 @@
+page,
+view,
+text,
+button,
+input,
+textarea,
+scroll-view {
+  box-sizing: border-box;
+}
+
+button::after {
+  border: none;
+}
+
+.page-container {
+  padding: 32rpx;
+}
+
+.app-card {
+  background: #ffffff;
+  border-radius: 20rpx;
+  padding: 32rpx;
+  margin-bottom: 24rpx;
+  box-shadow: 0 2rpx 12rpx rgba(17, 24, 39, 0.04);
+}
+
+.app-card-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 16rpx;
+}
+
+.app-field-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16rpx 0;
+  font-size: 28rpx;
+}
+
+.app-field-label {
+  color: #6b7280;
+}
+
+.app-field-value {
+  color: #111827;
+}
+
+.app-primary-button {
+  background: #111827;
+  color: #ffffff;
+  border-radius: 16rpx;
+  font-size: 30rpx;
+  padding: 8rpx 0;
+}
+
+.app-plain-button {
+  background: #f3f4f6;
+  color: #374151;
+  border-radius: 16rpx;
+  font-size: 30rpx;
+  padding: 8rpx 0;
+}
+
+.app-hint {
+  font-size: 24rpx;
+  color: #9ca3af;
+  margin-top: 16rpx;
+  line-height: 1.6;
+}
