@@ -66,8 +66,8 @@ function openProfile() {
 <template>
   <view class="page-container">
     <view class="app-card">
-      <view class="home-title">sumly</view>
-      <view class="home-subtitle">微信小程序 + Go 后端骨架</view>
+      <view class="home-title">记金</view>
+      <view class="home-subtitle">记录你的黄金资产</view>
     </view>
 
     <view class="app-card">

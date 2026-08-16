@@ -1,6 +1,7 @@
 # sumly
 
-小程序 + 后端一体化 monorepo（`git@gitee.com:oryjk/sumly.git`）。
+小程序 + 后端一体化 monorepo（`git@gitee.com:oryjk/sumly.git`），应用中文名「记金」——
+记录黄金等个人资产，按最新行情计算市值与每日涨跌。
 技术栈与架构完全沿用 `registration_system` 项目的工程模式：
 
 | 子项目 | 说明 | 参考项目 |

@@ -1,7 +1,7 @@
 {
-  "name": "sumly",
+  "name": "记金",
   "appid": "touristappid",
-  "description": "sumly 微信小程序",
+  "description": "记金 - 记录你的黄金资产",
   "versionName": "0.1.0",
   "versionCode": "10",
   "transformPx": false,
