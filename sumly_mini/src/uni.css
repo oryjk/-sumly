@@ -109,7 +109,10 @@ page {
   background: #ffffff;
   border: 3rpx solid #111111;
   border-radius: 8rpx;
-  padding: 16rpx 24rpx;
+  /* uni-input 默认 height 固定 1.4em 且 overflow:hidden，
+     必须显式给定高度，否则边框和内边距会把内部 input 压到不可点 */
+  height: 88rpx;
+  padding: 0 24rpx;
   font-size: 28rpx;
   color: #111111;
 }
@@ -166,8 +169,9 @@ page {
   .app-input {
     border-width: 3px;
     border-radius: 6px;
+    height: 44px;
     font-size: 15px;
-    padding: 10px 14px;
+    padding: 0 14px;
   }
 
   .app-hint {
