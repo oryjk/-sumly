@@ -75,6 +75,39 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /api/v1/app/auth/dev/login:
+    post:
+      operationId: loginAppWithDevIdentifier
+      tags: [App Auth]
+      summary: 开发测试登录（仅开发环境）
+      description: 仅开发测试使用，需后端 DEV_LOGIN_ENABLED=true，未启用时该路由不注册（404）。identifier 加 dev- 前缀作为 openid，用户不存在时自动注册并签发 JWT。生产环境禁止开启。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DevLoginRequest"
+      responses:
+        "200":
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WechatLoginResponse"
+        "403":
+          description: 用户已冻结
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: 请求参数无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /api/v1/app/users/me:
     get:
       operationId: getAppMe
@@ -178,6 +211,15 @@ components:
         js_code:
           type: string
           description: wx.login 返回的临时登录凭证
+
+    DevLoginRequest:
+      type: object
+      required: [identifier]
+      properties:
+        identifier:
+          type: string
+          maxLength: 120
+          description: 开发测试标识（如 test-user-01），后端加 dev- 前缀作为 openid
 
     WechatLoginResponse:
       type: object
