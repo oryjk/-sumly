@@ -19,6 +19,7 @@ enum GoldTheme {
     // 底色与卡片
     static let background = Color(hex: 0x1B1B1D)
     static let card = Color(hex: 0x282523)
+    static let calendarCell = Color(hex: 0x34312F)
     static let cardStroke = Color.white.opacity(0.07)
 
     // 强调

@@ -15,7 +15,7 @@ enum HoldingsSelection {
             guard query.isEmpty || (record.brand.isEmpty ? "未知" : record.brand).localizedCaseInsensitiveContains(query) || record.note.localizedCaseInsensitiveContains(query) else { return false }
             if filter != .all {
                 guard let quote, quote.isFinite, quote > 0 else { return false }
-                let profit = quote - record.unitPriceCNY
+                let profit = record.grams * (quote - record.unitPriceCNY) - record.extraFee
                 if filter == .profit && profit < 0 { return false }
                 if filter == .loss && profit >= 0 { return false }
             }
@@ -25,7 +25,7 @@ enum HoldingsSelection {
             case .newest: return a.timestamp > b.timestamp
             case .oldest: return a.timestamp < b.timestamp
             case .heaviest: return a.grams == b.grams ? a.timestamp > b.timestamp : a.grams > b.grams
-            case .costliest: return a.grams * a.unitPriceCNY > b.grams * b.unitPriceCNY
+            case .costliest: return a.grams * a.unitPriceCNY + a.extraFee > b.grams * b.unitPriceCNY + b.extraFee
             }
         }
     }

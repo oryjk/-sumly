@@ -15,11 +15,16 @@ struct AddHoldingSheet: View {
     @State private var timestamp = Date.now
     @State private var note = ""
     @State private var brand = ""
+    @State private var feeText = ""
+    @State private var channel = ""
+    private let targetBook: String?
     @AppStorage("holdings.currentBook") private var book = "默认账本"
     @State private var errorMessage: String?
     @FocusState private var gramsFocused: Bool
 
-    init(defaultUnitPrice: Double?) {
+    init(defaultUnitPrice: Double?, date: Date = .now, book: String? = nil) {
+        targetBook = book
+        _timestamp = State(initialValue: min(date, .now))
         self.defaultUnitPrice = defaultUnitPrice
         _priceText = State(
             initialValue: defaultUnitPrice.map { String(format: "%.2f", $0) } ?? ""
@@ -50,6 +55,8 @@ struct AddHoldingSheet: View {
                         .environment(\.locale, Locale(identifier: "zh_CN"))
                     }
                     fieldRow(label: "品牌（可选）") { TextField("例如 周生生、周大福", text: $brand) }
+                    fieldRow(label: "额外费用（元，可选）") { TextField("0", text: $feeText).keyboardType(.decimalPad) }
+                    fieldRow(label: "购买渠道（可选）") { TextField("例如 门店、银行", text: $channel) }
                     fieldRow(label: "备注（可选）") {
                         TextField("例如 金条、周大福", text: $note)
                     }
@@ -125,7 +132,12 @@ struct AddHoldingSheet: View {
 
         let record = HoldingRecord(grams: grams, unitPriceCNY: price, timestamp: timestamp, note: note.trimmingCharacters(in: .whitespacesAndNewlines))
         record.brand = brand.trimmingCharacters(in: .whitespacesAndNewlines)
-        record.bookName = book
+        guard let fee = Double(feeText.isEmpty ? "0" : feeText), fee.isFinite, fee >= 0 else {
+            errorMessage = "请输入有效的额外费用"; return
+        }
+        record.extraFee = fee
+        record.purchaseChannel = channel.trimmingCharacters(in: .whitespacesAndNewlines)
+        record.bookName = targetBook ?? book
         modelContext.insert(record)
         do { try modelContext.save() } catch {
             modelContext.rollback()

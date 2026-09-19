@@ -36,7 +36,7 @@ final class HoldingsViewModel {
 
     func stats(for records: [HoldingRecord]) -> HoldingsStats {
         HoldingsStats.compute(
-            records: records.filter { $0.disposition == "holding" }.map { (grams: $0.grams, unitPrice: $0.unitPriceCNY) },
+            records: records.filter { $0.disposition == "holding" }.map { (grams: $0.grams, unitPrice: $0.unitPriceCNY + ($0.grams > 0 ? $0.extraFee / $0.grams : 0)) },
             cnyPerGram: quote?.cnyPerGram ?? 0
         )
     }
@@ -44,6 +44,6 @@ final class HoldingsViewModel {
     /// 单条记录的当前收益 = 克数 ×（当前元/克 − 买入元/克）；估值不可用时返回 nil。
     func recordProfit(_ record: HoldingRecord) -> Double? {
         guard let quote, quote.cnyPerGram > 0 else { return nil }
-        return record.grams * (quote.cnyPerGram - record.unitPriceCNY)
+        return record.grams * (quote.cnyPerGram - record.unitPriceCNY) - record.extraFee
     }
 }

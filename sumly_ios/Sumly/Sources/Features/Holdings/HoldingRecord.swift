@@ -20,6 +20,10 @@ final class HoldingRecord {
     var disposition: String = "holding"
     var disposedAt: Date?
     var disposalAmount: Double = 0
+    var purchaseID: UUID?
+    var extraFee: Double = 0
+    var purchaseChannel: String = ""
+    var counterparty: String = ""
 
     init(
         grams: Double,

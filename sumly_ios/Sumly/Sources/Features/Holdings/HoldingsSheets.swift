@@ -1,31 +1,6 @@
 import SwiftUI
 import SwiftData
 
-struct HoldingsCalendarSheet: View {
-    let records: [HoldingRecord]
-    let hideAmounts: Bool
-    @Environment(\.dismiss) private var dismiss
-    @State private var day = Date.now
-    private var daily: [HoldingRecord] { records.filter { Calendar.current.isDate($0.timestamp, inSameDayAs: day) } }
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    DatePicker("选择日期", selection: $day, in: ...Date.now, displayedComponents: .date).datePickerStyle(.graphical).environment(\.locale, Locale(identifier: "zh_CN"))
-                    HStack {
-                        Text(HoldingsSelection.dateText(day)).foregroundStyle(GoldTheme.textSecondary)
-                        Spacer()
-                        Text(hideAmounts ? "••••" : "攒入 \(daily.reduce(0) { $0 + $1.grams }.moneyText) 克").foregroundStyle(GoldTheme.gold)
-                    }.font(.subheadline)
-                    if daily.isEmpty { Text("这一天没有购入记录").foregroundStyle(GoldTheme.textSecondary).padding(.vertical, 25).frame(maxWidth: .infinity) }
-                    ForEach(daily) { record in HoldingRowView(record: record, profit: nil, hideAmounts: hideAmounts) }
-                }.padding(16)
-            }.background(GoldTheme.background).navigationTitle("攒金日历").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
-        }.presentationBackground(GoldTheme.background)
-    }
-}
-
 struct HoldingsHistorySheet: View {
     let records: [HoldingRecord]
     let hideAmounts: Bool
@@ -59,6 +34,7 @@ struct DisposeHoldingSheet: View {
     @State private var kind = "sold"
     @State private var grams = ""
     @State private var amount = ""
+    @State private var counterparty = ""
     @State private var date = Date.now
     @State private var error: String?
     var body: some View {
@@ -69,6 +45,7 @@ struct DisposeHoldingSheet: View {
                     LabeledContent("当前持仓", value: "\(record.grams.moneyText) 克")
                     TextField("本次克数", text: $grams).keyboardType(.decimalPad)
                     if kind == "sold" { TextField("实际收到的总金额（元）", text: $amount).keyboardType(.decimalPad) }
+                    TextField(kind == "gift" ? "受赠人（可选）" : "买家（可选）", text: $counterparty)
                     DatePicker("日期", selection: $date, in: record.timestamp...Date.now, displayedComponents: [.date, .hourAndMinute])
                 } footer: { Text("可以操作部分克数，剩余黄金继续保留在本账本。") }
                 if let error { Text(error).foregroundStyle(GoldTheme.up) }
@@ -84,7 +61,7 @@ struct DisposeHoldingSheet: View {
         let proceeds = kind == "gift" ? 0 : Double(amount)
         guard let proceeds, proceeds.isFinite, proceeds >= 0 else { error = "请输入有效的实收金额。"; return }
         do {
-            try HoldingDisposal.apply(record: record, grams: quantity, proceeds: proceeds, kind: kind, date: date, context: context)
+            try HoldingDisposal.apply(record: record, grams: quantity, proceeds: proceeds, kind: kind, date: date, context: context, counterparty: counterparty.trimmingCharacters(in: .whitespacesAndNewlines))
             dismiss()
         } catch { context.rollback(); self.error = "未能保存，请检查填写内容后重试。" }
     }

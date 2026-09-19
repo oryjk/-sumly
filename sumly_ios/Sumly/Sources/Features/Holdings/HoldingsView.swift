@@ -70,7 +70,7 @@ struct HoldingsView: View {
         .sheet(item: $sheet) { page in
             switch page {
             case .add: AddHoldingSheet(defaultUnitPrice: model.quote?.cnyPerGram)
-            case .calendar: HoldingsCalendarSheet(records: bookRecords, hideAmounts: hideAmounts)
+            case .calendar: HoldingsCalendarSheet(initialBook: book, hideAmounts: hideAmounts)
             case .history: HoldingsHistorySheet(records: bookRecords.filter { $0.disposition != "holding" }, hideAmounts: hideAmounts)
             case .settings: settings
             }
@@ -225,7 +225,7 @@ struct HoldingRowView: View {
             }
             HStack(spacing: 5) {
                 Image(systemName: "tag.fill").foregroundStyle(GoldTheme.gold).font(.system(size: 13))
-                Text(hideAmounts ? "••••" : "\(record.grams.formatted(.number.precision(.fractionLength(0...2))))克 \((record.grams * record.unitPriceCNY).formatted(.number.precision(.fractionLength(0...2))))元").lineLimit(1).minimumScaleFactor(0.7)
+                Text(hideAmounts ? "••••" : "\(record.grams.formatted(.number.precision(.fractionLength(0...2))))克 \((record.grams * record.unitPriceCNY + record.extraFee).formatted(.number.precision(.fractionLength(0...2))))元").lineLimit(1).minimumScaleFactor(0.7)
                 Spacer()
                 Text(HoldingsSelection.dateText(record.timestamp)).monospacedDigit()
             }.font(.system(size: 13, weight: .medium))
