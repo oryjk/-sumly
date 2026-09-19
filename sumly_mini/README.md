@@ -1,7 +1,7 @@
 # sumly_mini
 
 sumly 微信小程序端。uni-app + Vue 3 + TypeScript + Vite，UI 组件库 @wot-ui/ui，
-架构与工程约定见 [AGENTS.md](AGENTS.md)（沿用 registration_system_mini 的分层模式）。
+架构与工程约定见 [AGENTS.md](AGENTS.md)。
 
 ## 当前能力
 

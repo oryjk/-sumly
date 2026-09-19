@@ -2,8 +2,9 @@
 
 ## 项目定位
 
-sumly 小程序的 Go 后端。架构与工程约束沿用 `registration_system_go` 的六边形架构；
-当前阶段只实现了微信注册登录与用户资料闭环，后续业务模块按相同模式扩展。
+sumly 的 Go 后端，六边形架构：`internal/<module>/{domain,application,ports,adapters}`
+分层，具体约束见下「架构约束」。当前已实现认证（微信登录 + 开发登录）、用户资料与
+黄金行情模块，后续业务模块按相同模式扩展。
 
 本项目最低工具链为 Go 1.26.5。
 
@@ -19,6 +20,7 @@ sumly 小程序的 Go 后端。架构与工程约束沿用 `registration_system_
 ## 架构约束
 
 - 按业务模块组织：`internal/<module>/domain|application|ports|adapters`。
+- 新功能优先形成小而高内聚的 use case，不建立全局巨型 service。
 - `domain` 不依赖 Gin、pgx、sqlc 或外部 SDK。
 - `application` 只依赖 domain 和 ports，负责业务编排和权限规则。
 - `ports` 定义模块需要的外部能力，不依赖 adapter。

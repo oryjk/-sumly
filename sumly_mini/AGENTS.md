@@ -52,3 +52,19 @@ src/
 - mock 模式必须“全有或全无”：新接口要么补 mock handler，要么明确关闭 `VITE_USE_MOCK`。
 - `manifest.json` 的 `mp-weixin.appid` 需替换为真实小程序 appid（当前为占位 `touristappid`），
   且必须与后端 `WECHAT_APP_ID` 一致。
+
+## 跨端约束（H5 与小程序兼容）
+
+日常开发以 H5 为主，但必须保证 mp-weixin 可编译可运行；H5 显示正常不代表小程序正常。
+
+- 统一使用 `uni.*` API（`uni.request`、`uni.getStorageSync`、`uni.navigateTo`…），
+  不要直接调用 `wx.*`。
+- 禁止浏览器 DOM API：不写 `document.*`、`window.*`、`localStorage`、`querySelector` 等，
+  存储统一用 `uni.getStorageSync` / `uni.setStorageSync`。
+- 微信专属能力（`uni.login` 换 code、`open-type` 按钮等）必须用条件编译
+  `#ifdef MP-WEIXIN` / `#ifndef MP-WEIXIN` 隔离，并提供 H5 降级路径
+  （如 H5 开发登录入口）。
+- 运行时 Vue 组件必须直接从 `.vue` 文件导入（如 `@/components/NeoInput/NeoInput.vue`），
+  不要经 barrel 文件二次导出：mp-weixin 编译器不追踪二次导出，会漏掉
+  `usingComponents`，构建成功但组件不渲染；类型与纯 TS 函数不受此限。
+- 新增页面或功能后，定期执行 `bun run build:mp-weixin` 确认小程序可编译。
