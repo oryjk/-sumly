@@ -38,6 +38,8 @@ enum GoldTheme {
     // 图表
     static let gridline = Color.white.opacity(0.06)
 
+    static let holdingsCardShape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+    static let holdingPriceShape = UnevenRoundedRectangle(topLeadingRadius: 16, bottomLeadingRadius: 0, bottomTrailingRadius: 13, topTrailingRadius: 0)
     static let capsuleShape = Capsule()
     static let cardShape = RoundedRectangle(cornerRadius: 20, style: .continuous)
     static let rangeShape = RoundedRectangle(cornerRadius: 6, style: .continuous)

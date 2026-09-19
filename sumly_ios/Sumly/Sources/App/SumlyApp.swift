@@ -6,6 +6,7 @@ struct SumlyApp: App {
     /// 本地持仓存储；后续账号体系就绪后迁移到后端同步。
     private static let holdingsContainer: ModelContainer = {
         do {
+            if HoldingsDesignPreview.isEnabled { return try HoldingsDesignPreview.container() }
             return try ModelContainer(for: HoldingRecord.self)
         } catch {
             fatalError("无法初始化本地持仓存储: \(error)")
@@ -24,7 +25,7 @@ struct SumlyApp: App {
 
 
 private struct GoldRootView: View {
-    @State private var selectedTab = 0
+    @State private var selectedTab = HoldingsDesignPreview.isEnabled ? 1 : 0
     @State private var showingAdd = false
     @State private var showingNotice = false
 

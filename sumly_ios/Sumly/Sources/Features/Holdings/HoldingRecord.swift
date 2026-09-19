@@ -14,6 +14,12 @@ final class HoldingRecord {
     var timestamp: Date
     var note: String
     var createdAt: Date
+    // 新字段有默认值，旧持仓通过 SwiftData 轻量迁移保留。
+    var brand: String = ""
+    var bookName: String = "默认账本"
+    var disposition: String = "holding"
+    var disposedAt: Date?
+    var disposalAmount: Double = 0
 
     init(
         grams: Double,

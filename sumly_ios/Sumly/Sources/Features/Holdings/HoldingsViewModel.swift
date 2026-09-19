@@ -13,14 +13,14 @@ final class HoldingsViewModel {
 
     private let quoteService: (any GoldQuoteServicing)?
 
-    init(quoteService: (any GoldQuoteServicing)? = BackendGoldPriceService()) {
+    init(quoteService: (any GoldQuoteServicing)? = BackendGoldPriceService(instrumentID: "au9999")) {
         self.quoteService = quoteService
     }
 
     /// 页面入口：立即取一次报价，随后每 3 秒轮询；视图销毁自动取消。
     func start() async {
         await pollQuote()
-        guard let quoteService else { return }
+        guard quoteService != nil else { return }
         while !Task.isCancelled {
             try? await Task.sleep(for: Self.quotePollInterval)
             guard !Task.isCancelled else { return }
@@ -36,7 +36,7 @@ final class HoldingsViewModel {
 
     func stats(for records: [HoldingRecord]) -> HoldingsStats {
         HoldingsStats.compute(
-            records: records.map { (grams: $0.grams, unitPrice: $0.unitPriceCNY) },
+            records: records.filter { $0.disposition == "holding" }.map { (grams: $0.grams, unitPrice: $0.unitPriceCNY) },
             cnyPerGram: quote?.cnyPerGram ?? 0
         )
     }

@@ -13,6 +13,7 @@ struct BackendGoldPriceService: GoldPriceServicing, GoldQuoteServicing, GoldIntr
         return URL(string: "https://oryjk.cn/sumly/api/v1")!
     }()
 
+    var instrumentID: String? = nil
     var baseURL: URL = BackendGoldPriceService.defaultBaseURL
     var session: URLSession = .shared
 
@@ -73,7 +74,8 @@ struct BackendGoldPriceService: GoldPriceServicing, GoldQuoteServicing, GoldIntr
     // MARK: - GoldQuoteServicing
 
     func fetchQuote() async throws -> GoldQuote {
-        let dto: QuoteDTO = try await get("app/market/gold/quote")
+        let path = instrumentID.map { "app/market/gold/instruments/\($0)/quote" } ?? "app/market/gold/quote"
+        let dto: QuoteDTO = try await get(path)
         return try Self.decodeQuote(dto)
     }
 

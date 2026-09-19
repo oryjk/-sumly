@@ -1,372 +1,240 @@
 import SwiftUI
 import SwiftData
 
-/// 持仓页：黄金克数记录、实时估值与收益。
 struct HoldingsView: View {
-    @Query(sort: \HoldingRecord.timestamp, order: .reverse)
-    private var records: [HoldingRecord]
+    @Query(sort: \HoldingRecord.timestamp, order: .reverse) private var records: [HoldingRecord]
+    @Environment(\.modelContext) private var context
+    @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("holdings.currentBook") private var book = "默认账本"
+    @AppStorage("holdings.books") private var savedBooks = "默认账本"
+    @AppStorage("holdings.hideAmounts") private var hideAmounts = false
+    @State private var model = HoldingsDesignPreview.makeModel()
+    @State private var search = ""
+    @State private var filter = HoldingFilter.all
+    @State private var sort = HoldingSort.newest
+    @State private var sheet: HoldingPageSheet?
+    @State private var newBook = ""
+    @State private var showingNewBook = false
+    @State private var batch = false
+    @State private var selection: Set<UUID> = []
+    @State private var deleteTargets: [HoldingRecord] = []
+    @State private var showingDelete = false
+    @State private var transferTargets: [HoldingRecord] = []
+    @State private var showingTransfer = false
+    @State private var disposing: HoldingRecord?
+    @State private var error: String?
 
-    @Environment(\.modelContext) private var modelContext
-    @State private var model = HoldingsViewModel()
-    @State private var showingAdd = false
-    @State private var hideAmounts = false
-    @ScaledMetric(relativeTo: .largeTitle) private var gramsFontSize: CGFloat = 48
+    private var books: [String] { Array(Set(savedBooks.components(separatedBy: "\n") + records.map(\.bookName) + ["默认账本"])).sorted() }
+    private var bookRecords: [HoldingRecord] { records.filter { $0.bookName == book } }
+    private var activeRecords: [HoldingRecord] { bookRecords.filter { $0.disposition == "holding" } }
+    private var visibleRecords: [HoldingRecord] { HoldingsSelection.records(records, book: book, search: search, filter: filter, sort: sort, quote: model.quote?.cnyPerGram) }
 
     var body: some View {
         ZStack {
             GoldTheme.background.ignoresSafeArea()
-            content
-        }
-        .task { await model.start() }
-        .sheet(isPresented: $showingAdd) {
-            AddHoldingSheet(defaultUnitPrice: model.quote?.cnyPerGram)
-        }
-    }
-
-    private var content: some View {
-        List {
-            Group {
-                summaryCard
-                Button {
-                    showingAdd = true
-                } label: {
-                    Label("添加黄金", systemImage: "plus")
-                }
-                .buttonStyle(GoldPrimaryButtonStyle())
-            }
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
-            .listRowInsets(EdgeInsets())
-
-            if records.isEmpty {
-                emptyState
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets())
-            } else {
-                ForEach(records) { record in
-                    HoldingRowView(
-                        record: record,
-                        profit: model.recordProfit(record),
-                        hideAmounts: hideAmounts
-                    )
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets())
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                        Button(role: .destructive) {
-                            delete(record)
-                        } label: {
-                            Label("删除", systemImage: "trash")
+            VStack(spacing: 0) {
+                header.padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 12)
+                List {
+                    summary.listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 10, trailing: 16))
+                    filters.listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 10, trailing: 16))
+                    if visibleRecords.isEmpty {
+                        emptyState.listRowInsets(EdgeInsets(top: 25, leading: 16, bottom: 0, trailing: 16))
+                    }
+                    ForEach(visibleRecords) { record in
+                        HStack(spacing: 8) {
+                            if batch {
+                                Button { if selection.contains(record.id) { selection.remove(record.id) } else { selection.insert(record.id) } } label: {
+                                    Image(systemName: selection.contains(record.id) ? "checkmark.circle.fill" : "circle").foregroundStyle(GoldTheme.gold)
+                                }.buttonStyle(.plain).accessibilityLabel("选择持仓")
+                            }
+                            HoldingRowView(record: record, profit: model.recordProfit(record), hideAmounts: hideAmounts)
+                        }
+                        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 10, trailing: 16))
+                        .listRowBackground(GoldTheme.background)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) { deleteTargets = [record]; showingDelete = true } label: { Label("删除", systemImage: "trash") }
+                            Button { transferTargets = [record]; showingTransfer = true } label: { Label("迁移", systemImage: "folder") }.tint(GoldTheme.textSecondary)
+                            Button { disposing = record } label: { Label("赠卖", systemImage: "gift") }.tint(GoldTheme.gold)
                         }
                     }
+                    .listRowSeparator(.hidden)
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .environment(\.defaultMinListRowHeight, 0)
+                .listRowSpacing(0)
+                if batch { batchBar.padding(.horizontal, 16).padding(.bottom, 10) }
             }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .contentMargins(16, for: .scrollContent)
-    }
-
-    // MARK: - 汇总卡（总克数 + 购入总价 / 最新估值 / 预估收益）
-
-    private var summaryCard: some View {
-        let stats = model.stats(for: records)
-        let perGram = model.quote?.cnyPerGram ?? 0
-        return VStack(spacing: 14) {
-            HStack {
-                Text("总持有（克）")
-                    .font(.footnote)
-                    .foregroundStyle(GoldTheme.textSecondary)
-                Spacer()
-                Button {
-                    hideAmounts.toggle()
-                } label: {
-                    Image(systemName: hideAmounts ? "eye.slash" : "eye")
-                        .font(.subheadline)
-                        .foregroundStyle(GoldTheme.textSecondary)
-                }
-                .accessibilityLabel(hideAmounts ? "显示金额" : "隐藏金额")
+        .task(id: scenePhase) { if scenePhase == .active { await model.start() } }
+        .sheet(item: $sheet) { page in
+            switch page {
+            case .add: AddHoldingSheet(defaultUnitPrice: model.quote?.cnyPerGram)
+            case .calendar: HoldingsCalendarSheet(records: bookRecords, hideAmounts: hideAmounts)
+            case .history: HoldingsHistorySheet(records: bookRecords.filter { $0.disposition != "holding" }, hideAmounts: hideAmounts)
+            case .settings: settings
             }
-
-            Text(masked(stats.totalGrams.formatted(.number.precision(.fractionLength(2)))))
-                .font(.system(size: gramsFontSize, weight: .semibold, design: .rounded))
-                .foregroundStyle(GoldTheme.gold)
-                .frame(maxWidth: .infinity)
-                .minimumScaleFactor(0.4)
-                .lineLimit(1)
-
-            HStack(spacing: 0) {
-                statCell("购入总价(元)", masked(stats.totalCost.moneyText))
-                statDivider
-                statCell(
-                    "最新估值(元)",
-                    stats.hasValuation ? masked(stats.totalValue.moneyText) : "—"
-                )
-                statDivider
-                statCell(
-                    "预估收益(元)",
-                    stats.hasValuation ? masked(stats.profit.signedMoneyText) : "—",
-                    color: stats.profit >= 0 ? GoldTheme.up : GoldTheme.down // 红涨绿跌
-                )
-            }
-
-            HStack {
-                if perGram > 0 {
-                    Text("金价 \(perGram.formatted(.number.precision(.fractionLength(2)))) 元/克 · 实时刷新")
-                } else {
-                    Text("正在获取金价…")
-                }
-                Spacer()
-                if let quote = model.quote {
-                    Text(quote.asOf.formatted(.dateTime.hour().minute()))
-                }
-            }
-            .font(.caption2)
-            .foregroundStyle(GoldTheme.textFaint)
         }
-        .goldCard()
-        .animation(.snappy(duration: 0.25), value: model.quote)
-    }
-
-    private var statDivider: some View {
-        Rectangle()
-            .fill(GoldTheme.gridline)
-            .frame(width: 1, height: 28)
-    }
-
-    private func statCell(_ label: String, _ value: String, color: Color = GoldTheme.text) -> some View {
-        VStack(spacing: 3) {
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(GoldTheme.textFaint)
-            Text(value)
-                .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                .foregroundStyle(color)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
+        .sheet(item: $disposing) { record in DisposeHoldingSheet(record: record) }
+        .alert("新建账本", isPresented: $showingNewBook) {
+            TextField("账本名称", text: $newBook)
+            Button("取消", role: .cancel) {}
+            Button("创建") {
+                let name = newBook.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\n", with: " ")
+                guard !name.isEmpty else { return }
+                savedBooks = (books + [name]).joined(separator: "\n"); book = name; search = ""; selection = []
+            }
         }
-        .frame(maxWidth: .infinity)
+        .confirmationDialog("删除所选持仓？", isPresented: $showingDelete, titleVisibility: .visible) {
+            Button("删除 \(deleteTargets.count) 条持仓", role: .destructive) { mutate { deleteTargets.forEach(context.delete) }; selection = [] }
+        } message: { Text("删除后无法恢复，购入记录也会移除。") }
+        .confirmationDialog("迁移到其他账本", isPresented: $showingTransfer, titleVisibility: .visible) {
+            ForEach(books.filter { $0 != book }, id: \.self) { target in
+                Button(target) { mutate { transferTargets.forEach { $0.bookName = target } }; selection = [] }
+            }
+            if books.count == 1 { Button("先新建账本") { newBook = ""; showingNewBook = true } }
+        }
+        .alert("保存失败", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) { Button("知道了") {} } message: { Text(error ?? "请重试") }
+        .onChange(of: book) { selection = []; filter = .all }
     }
 
-    private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "cube.transparent")
-                .font(.system(size: 44))
-                .foregroundStyle(GoldTheme.gold)
-            Text("还没有持仓记录")
-                .font(.system(.headline, design: .rounded))
+    private var header: some View {
+        HStack(spacing: 12) {
+            Menu {
+                ForEach(books, id: \.self) { name in Button { book = name } label: { Label(name, systemImage: name == book ? "checkmark" : "book.closed") } }
+                Divider()
+                Button("新建账本", systemImage: "plus") { newBook = ""; showingNewBook = true }
+            } label: {
+                HStack(spacing: 7) { Text(book).font(.system(size: 18, weight: .bold)).lineLimit(1); Image(systemName: "arrowtriangle.down.fill").font(.system(size: 12)) }
                 .foregroundStyle(GoldTheme.text)
-            Text("点击「添加黄金」，记录克数与买入时间，\n自动按最新金价估值")
-                .font(.footnote)
-                .foregroundStyle(GoldTheme.textSecondary)
-                .multilineTextAlignment(.center)
+            }
+            Spacer(minLength: 0)
+            HStack(spacing: 5) {
+                Image(systemName: "magnifyingglass")
+                TextField("搜索", text: $search).accessibilityLabel("搜索品牌或备注")
+                if !search.isEmpty { Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }.accessibilityLabel("清除搜索") }
+            }
+            .font(.system(size: 13)).foregroundStyle(GoldTheme.textSecondary)
+            .padding(.horizontal, 12).frame(width: 126, height: 32).background(GoldTheme.card, in: GoldTheme.capsuleShape)
+        }.frame(minHeight: 34)
+    }
+
+    private var summary: some View {
+        let stats = model.stats(for: activeRecords)
+        return VStack(spacing: 0) {
+            HStack(spacing: 7) {
+                Text("总重量(克)").foregroundStyle(GoldTheme.textSecondary)
+                Button { hideAmounts.toggle() } label: { Image(systemName: hideAmounts ? "eye.slash" : "eye").foregroundStyle(GoldTheme.text) }
+                    .accessibilityLabel(hideAmounts ? "显示金额" : "隐藏金额")
+            }.font(.system(size: 13, weight: .medium)).padding(.top, 20)
+            Text(mask(stats.totalGrams.moneyText)).font(.system(size: 44, weight: .bold)).monospacedDigit()
+                .foregroundStyle(GoldTheme.gold).lineLimit(1).minimumScaleFactor(0.5).frame(height: 60)
+            HStack(spacing: 0) {
+                metric("购入总价(元)", stats.totalCost.moneyText)
+                metric("预估价值(元)", stats.hasValuation ? stats.totalValue.moneyText : "—")
+                metric("预估收益(元)", stats.hasValuation ? stats.profit.moneyText : "—", color: stats.profit >= 0 ? GoldTheme.up : GoldTheme.down)
+            }.padding(.top, 5)
+            HStack(spacing: 16) {
+                action("攒金日历", filled: false) { sheet = .calendar }
+                action("添加黄金", filled: true) { sheet = .add }
+                action("赠卖记录", filled: false) { sheet = .history }
+            }.padding(.horizontal, 28).padding(.top, 17).padding(.bottom, 18)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 48)
+        .background(GoldTheme.card, in: GoldTheme.holdingsCardShape)
+        .overlay(alignment: .topTrailing) {
+            VStack(spacing: 12) {
+                Button { sheet = .settings } label: { Image(systemName: "gearshape").font(.system(size: 17)) }.accessibilityLabel("攒金设置")
+                Button { batch.toggle(); selection = [] } label: { Text(batch ? "完" : "批").font(.system(size: 11)).frame(width: 20, height: 20).overlay(GoldTheme.capsuleShape.strokeBorder(GoldTheme.textSecondary, lineWidth: 1)) }.accessibilityLabel(batch ? "完成批量管理" : "批量管理")
+            }.foregroundStyle(GoldTheme.textSecondary).padding(14)
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(GoldTheme.background).listRowSeparator(.hidden)
     }
 
-    private func delete(_ record: HoldingRecord) {
-        modelContext.delete(record)
-        try? modelContext.save()
+    private func metric(_ title: String, _ value: String, color: Color = GoldTheme.text) -> some View {
+        VStack(spacing: 6) {
+            Text(title).font(.system(size: 12)).foregroundStyle(GoldTheme.textSecondary)
+            Text(mask(value)).font(.system(size: 17, weight: .medium)).monospacedDigit().foregroundStyle(color).lineLimit(1).minimumScaleFactor(0.5)
+        }.frame(maxWidth: .infinity)
     }
-
-    /// 隐藏金额时统一用星号遮罩。
-    private func masked(_ text: String) -> String {
-        hideAmounts ? "✱✱✱" : text
+    private func action(_ title: String, filled: Bool, perform: @escaping () -> Void) -> some View {
+        Button(action: perform) { Text(title).font(.system(size: 12, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.7).frame(maxWidth: .infinity).frame(height: 36)
+            .foregroundStyle(filled ? GoldTheme.onGold : GoldTheme.gold)
+            .background(filled ? GoldTheme.gold : GoldTheme.card, in: GoldTheme.capsuleShape)
+            .overlay(GoldTheme.capsuleShape.strokeBorder(GoldTheme.gold, lineWidth: 1)) }.buttonStyle(.plain)
     }
+    private var filters: some View {
+        HStack(spacing: 8) {
+            Menu { Picker("筛选", selection: $filter) { ForEach(HoldingFilter.allCases, id: \.self) { Text($0.rawValue).tag($0) } } } label: { filterLabel(filter == .all ? "筛选" : filter.rawValue) }
+            Menu { Picker("排序", selection: $sort) { ForEach(HoldingSort.allCases, id: \.self) { Text($0.rawValue).tag($0) } } } label: { filterLabel("排序") }
+            Spacer(minLength: 2)
+            Text("*左滑可赠卖、迁移或删除").font(.system(size: 10)).foregroundStyle(GoldTheme.textSecondary).lineLimit(1).minimumScaleFactor(0.6)
+        }.listRowBackground(GoldTheme.background).listRowSeparator(.hidden)
+    }
+    private func filterLabel(_ title: String) -> some View {
+        HStack(spacing: 6) { Text(title); Image(systemName: "chevron.down").font(.system(size: 10)) }.font(.system(size: 12, weight: .semibold)).foregroundStyle(GoldTheme.text).padding(.horizontal, 13).frame(height: 27).background(GoldTheme.card, in: GoldTheme.capsuleShape)
+    }
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            GoldMoneyBagShape().fill(GoldTheme.gold).frame(width: 30, height: 33)
+            Text(activeRecords.isEmpty ? "还没有攒金记录" : "没有符合条件的记录").font(.subheadline).foregroundStyle(GoldTheme.text)
+            Text(activeRecords.isEmpty ? "从第一笔黄金开始，慢慢攒下你的底气" : "试试其他关键词或筛选条件").font(.caption).foregroundStyle(GoldTheme.textSecondary)
+        }.frame(maxWidth: .infinity).listRowBackground(GoldTheme.background).listRowSeparator(.hidden)
+    }
+    private var batchBar: some View {
+        HStack {
+            Button("全选") { selection = Set(visibleRecords.map(\.id)) }
+            Text("已选 \(selection.count) 笔").font(.caption).foregroundStyle(GoldTheme.textSecondary)
+            Spacer()
+            Button("迁移") { transferTargets = activeRecords.filter { selection.contains($0.id) }; showingTransfer = true }.disabled(selection.isEmpty)
+            Button("删除", role: .destructive) { deleteTargets = activeRecords.filter { selection.contains($0.id) }; showingDelete = true }.disabled(selection.isEmpty)
+        }.font(.subheadline).padding(12).background(GoldTheme.card, in: GoldTheme.holdingsCardShape)
+    }
+    private var settings: some View {
+        NavigationStack {
+            Form {
+                Section("估值基准") {
+                    LabeledContent("品种", value: "国内黄金 · Au99.99")
+                    LabeledContent("来源", value: "新浪 / 上海黄金交易所")
+                    LabeledContent("最近报价", value: model.quote.map { "\($0.cnyPerGram.moneyText) 元/克" } ?? "暂不可用")
+                    if let quote = model.quote { Text(quote.asOf.formatted(date: .abbreviated, time: .shortened)).foregroundStyle(GoldTheme.textSecondary) }
+                }
+                Section { Text("预估价值按总克数与最新可用报价计算，实际变现金额可能包含工费、回购价差等差异。持仓记录保存在当前设备。").font(.footnote).foregroundStyle(GoldTheme.textSecondary) }
+                Toggle("隐藏金额", isOn: $hideAmounts)
+            }.navigationTitle("攒金设置").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { sheet = nil } } }
+        }.presentationBackground(GoldTheme.background)
+    }
+    private func mutate(_ operation: () -> Void) { operation(); do { try context.save() } catch { context.rollback(); self.error = "未能保存修改，请重试。" } }
+    private func mask(_ text: String) -> String { hideAmounts ? "••••" : text }
 }
 
-// MARK: - 记录行
+enum HoldingPageSheet: String, Identifiable { case add, calendar, history, settings; var id: String { rawValue } }
 
-private struct HoldingRowView: View {
+struct HoldingRowView: View {
     let record: HoldingRecord
     let profit: Double?
     let hideAmounts: Bool
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top) {
-                Text("\(record.unitPriceCNY.formatted(.number.precision(.fractionLength(2))))元/克")
-                    .font(.system(.caption2, design: .rounded).weight(.bold))
-                    .foregroundStyle(GoldTheme.onGold)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(GoldTheme.gold, in: GoldTheme.capsuleShape)
+        VStack(spacing: 17) {
+            HStack {
+                Text(record.brand.isEmpty ? "未知" : record.brand).font(.system(size: 14, weight: .medium)).lineLimit(1)
                 Spacer()
-                if let profit {
-                    Text(profit.signedMoneyText)
-                        .font(.system(.subheadline, design: .rounded).weight(.bold))
-                        .foregroundStyle(profit >= 0 ? GoldTheme.up : GoldTheme.down) // 红涨绿跌
-                }
+                Text(hideAmounts ? "收益：••••" : "收益：\(profit?.signedMoneyText ?? "—")")
+                    .font(.system(size: 15)).monospacedDigit().foregroundStyle((profit ?? 0) >= 0 ? GoldTheme.up : GoldTheme.down).lineLimit(1).minimumScaleFactor(0.7)
             }
-
-            Text(masked(
-                "\(record.grams.formatted(.number.precision(.fractionLength(2))))克 · "
-                    + (record.grams * record.unitPriceCNY).moneyText + "元"
-            ))
-            .font(.system(.headline, design: .rounded))
-            .foregroundStyle(GoldTheme.text)
-
-            HStack(spacing: 8) {
-                Label(
-                    record.timestamp.formatted(.dateTime.year().month().day().hour().minute()),
-                    systemImage: "clock"
-                )
-                if !record.note.isEmpty {
-                    Text(record.note)
-                        .lineLimit(1)
-                }
-            }
-            .font(.caption)
-            .foregroundStyle(GoldTheme.textFaint)
+            HStack(spacing: 5) {
+                Image(systemName: "tag.fill").foregroundStyle(GoldTheme.gold).font(.system(size: 13))
+                Text(hideAmounts ? "••••" : "\(record.grams.formatted(.number.precision(.fractionLength(0...2))))克 \((record.grams * record.unitPriceCNY).formatted(.number.precision(.fractionLength(0...2))))元").lineLimit(1).minimumScaleFactor(0.7)
+                Spacer()
+                Text(HoldingsSelection.dateText(record.timestamp)).monospacedDigit()
+            }.font(.system(size: 13, weight: .medium))
         }
-        .padding(14)
-        .background(GoldTheme.card, in: GoldTheme.cardShape)
-        .overlay(GoldTheme.cardShape.strokeBorder(GoldTheme.cardStroke, lineWidth: 1))
-    }
-
-    private func masked(_ text: String) -> String {
-        hideAmounts ? "✱✱✱" : text
-    }
-}
-
-// MARK: - 添加表单
-
-struct AddHoldingSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
-
-    /// 进入表单时的当前「元/克」价，用于预填购入单价。
-    let defaultUnitPrice: Double?
-
-    @State private var gramsText = ""
-    @State private var priceText = ""
-    @State private var timestamp = Date.now
-    @State private var note = ""
-    @State private var errorMessage: String?
-    @FocusState private var gramsFocused: Bool
-
-    init(defaultUnitPrice: Double?) {
-        self.defaultUnitPrice = defaultUnitPrice
-        _priceText = State(
-            initialValue: defaultUnitPrice.map { String(format: "%.2f", $0) } ?? ""
-        )
-    }
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 14) {
-                    fieldRow(label: "克数") {
-                        TextField("例如 5.5", text: $gramsText)
-                            .keyboardType(.decimalPad)
-                            .focused($gramsFocused)
-                    }
-                    fieldRow(label: "购入单价（元/克）") {
-                        TextField(defaultUnitPrice != nil ? "当前金价 \(String(format: "%.2f", defaultUnitPrice!))" : "例如 900.00", text: $priceText)
-                            .keyboardType(.decimalPad)
-                    }
-                    fieldRow(label: "持有时间") {
-                        DatePicker(
-                            "持有时间",
-                            selection: $timestamp,
-                            in: ...Date.now,
-                            displayedComponents: [.date, .hourAndMinute]
-                        )
-                        .labelsHidden()
-                        .environment(\.locale, Locale(identifier: "zh_CN"))
-                    }
-                    fieldRow(label: "备注（可选）") {
-                        TextField("例如 金条、周大福", text: $note)
-                    }
-
-                    if let errorMessage {
-                        Text(errorMessage)
-                            .font(.footnote)
-                            .foregroundStyle(GoldTheme.up)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-                .padding(16)
-            }
-            .background(GoldTheme.background)
-            .navigationTitle("添加黄金")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("取消") { dismiss() }
-                        .foregroundStyle(GoldTheme.textSecondary)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("保存") { save() }
-                        .font(.system(.subheadline, design: .rounded).weight(.bold))
-                        .foregroundStyle(GoldTheme.gold)
-                }
-            }
+        .foregroundStyle(GoldTheme.text).padding(.horizontal, 17).padding(.top, 20).padding(.bottom, 17)
+        .background(GoldTheme.card, in: GoldTheme.holdingsCardShape)
+        .overlay(alignment: .topLeading) {
+            Text(hideAmounts ? "••••元/克" : "\(record.unitPriceCNY.moneyText)元/克").font(.system(size: 11)).foregroundStyle(GoldTheme.onGold)
+                .padding(.horizontal, 11).frame(height: 14).background(GoldTheme.gold, in: GoldTheme.holdingPriceShape)
         }
-        .presentationBackground(GoldTheme.background)
-        .onAppear { gramsFocused = true }
-    }
-
-    private func fieldRow<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label)
-                .font(.footnote)
-                .foregroundStyle(GoldTheme.textSecondary)
-            content()
-                .font(.system(.body, design: .rounded))
-                .foregroundStyle(GoldTheme.text)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(GoldTheme.card, in: GoldTheme.cardShape)
-                .overlay(GoldTheme.cardShape.strokeBorder(GoldTheme.cardStroke, lineWidth: 1))
-        }
-    }
-
-    private func save() {
-        let grams = Double(gramsText.trimmingCharacters(in: .whitespaces))
-        var price = Double(priceText.trimmingCharacters(in: .whitespaces))
-        if price == nil, let fallback = defaultUnitPrice, fallback > 0 {
-            price = fallback // 单价留空时按当前金价计
-        }
-
-        guard let grams, grams > 0, grams <= 1_000_000 else {
-            errorMessage = "请输入有效的克数（大于 0）"
-            return
-        }
-        guard let price, price > 0, price <= 1_000_000 else {
-            errorMessage = "请输入有效的购入单价（元/克）"
-            return
-        }
-        guard timestamp <= .now else {
-            errorMessage = "持有时间不能晚于当前时间"
-            return
-        }
-
-        modelContext.insert(
-            HoldingRecord(
-                grams: grams,
-                unitPriceCNY: price,
-                timestamp: timestamp,
-                note: note.trimmingCharacters(in: .whitespaces)
-            )
-        )
-        try? modelContext.save()
-        dismiss()
-    }
-}
-
-// MARK: - 金额格式化
-
-extension Double {
-    /// 925.93
-    var moneyText: String {
-        formatted(.number.precision(.fractionLength(2)))
-    }
-
-    /// +24.98 / −12.30
-    var signedMoneyText: String {
-        formatted(.number.precision(.fractionLength(2)).sign(strategy: .always()))
     }
 }
