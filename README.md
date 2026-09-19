@@ -1,6 +1,6 @@
 # sumly
 
-小程序 / H5 / iOS 多端 + 后端 monorepo（`git@gitee.com:oryjk/sumly.git`），应用中文名「记金」——
+小程序 / H5 / iOS 多端 + 后端 monorepo（`git@github.com:oryjk/-sumly.git`），应用中文名「记金」——
 记录黄金等个人资产，按最新行情计算市值与每日涨跌。
 三个子项目共用同一套工程模式：按子项目分目录、每目录自带 `AGENTS.md` 架构与协作约定、
 后端六边形架构 + `{ code, message, data }` 响应 envelope、前端视觉只允许引用设计令牌。
