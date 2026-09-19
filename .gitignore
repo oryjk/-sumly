@@ -1,1 +1,8 @@
 .DS_Store
+data/
+
+# iOS：.xcodeproj 由 XcodeGen 生成（改 project.yml 后 make generate），不入库
+sumly_ios/Sumly.xcodeproj/
+sumly_ios/build/
+xcuserdata/
+*.xcuserstate
