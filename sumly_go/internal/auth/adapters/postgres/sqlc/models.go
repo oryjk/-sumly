@@ -8,6 +8,32 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type GoldDailyBar struct {
+	Symbol      string             `json:"symbol"`
+	TradingDate pgtype.Date        `json:"trading_date"`
+	Open        float64            `json:"open"`
+	High        float64            `json:"high"`
+	Low         float64            `json:"low"`
+	Close       float64            `json:"close"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type GoldNativeSample struct {
+	Instrument string             `json:"instrument"`
+	Bucket     pgtype.Timestamptz `json:"bucket"`
+	SampledAt  pgtype.Timestamptz `json:"sampled_at"`
+	SourceAt   pgtype.Timestamptz `json:"source_at"`
+	Price      float64            `json:"price"`
+}
+
+type GoldRealtimeSample struct {
+	Symbol    string             `json:"symbol"`
+	Bucket    pgtype.Timestamptz `json:"bucket"`
+	SampledAt pgtype.Timestamptz `json:"sampled_at"`
+	SourceAt  pgtype.Timestamptz `json:"source_at"`
+	PriceCny  float64            `json:"price_cny"`
+}
+
 type User struct {
 	ID          int64            `json:"id"`
 	Openid      string           `json:"openid"`

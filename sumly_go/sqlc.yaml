@@ -10,3 +10,11 @@ sql:
         sql_package: pgx/v5
         emit_json_tags: true
         emit_pointers_for_null_types: true
+  - engine: postgresql
+    schema: db/migrations
+    queries: db/queries/market.sql
+    gen:
+      go:
+        package: marketsqlc
+        out: internal/market/adapters/postgres/sqlc
+        sql_package: pgx/v5

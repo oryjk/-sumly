@@ -10,6 +10,7 @@ tags:
   - name: System
   - name: App Auth
   - name: App Users
+  - name: App Market
 
 x-bearer-security: &bearerSecurity
   - bearerAuth: []
@@ -142,6 +143,264 @@ paths:
                 $ref: "#/components/schemas/ProfileResponse"
         <<: *standardErrors
 
+  /api/v1/app/market/gold/quote:
+    get:
+      operationId: getGoldQuote
+      tags: [App Market]
+      summary: 伦敦金实时报价
+      description: 实时报价（XAU/USD，美元/盎司），含当日涨跌；服务端短 TTL 缓存，上游故障时返回最近一次缓存。公开接口，无需登录。
+      security: []
+      responses:
+        "200":
+          description: 实时报价
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GoldQuoteResponse"
+        "500":
+          description: 行情源不可用且无缓存
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/app/market/gold/instruments:
+    get:
+      operationId: listGoldInstruments
+      tags: [App Market]
+      summary: 黄金品种目录及来源、单位、延迟信息
+      security: []
+      responses:
+        "200":
+          description: data.instruments 品种列表；au9999、xauusd、comex-gold。COMEX 固定为 GCZ26，延迟1800秒，不是CFD。
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer}
+                  message: {type: string}
+                  data:
+                    type: object
+                    properties:
+                      instruments:
+                        type: array
+                        items: {$ref: '#/components/schemas/GoldInstrument'}
+  /api/v1/app/market/gold/instruments/{instrument}/quote:
+    get:
+      operationId: getInstrumentGoldQuote
+      tags: [App Market]
+      summary: 原始单位报价与人民币折算
+      description: 响应包含 instrument 元数据。国内 CNY/g；伦敦与COMEX为 USD/troy_oz。COMEX为GCZ26延迟报价。实时窗口停更不清空，interval_seconds 为5或真实分钟回退60；不填造缺失样本。
+      security: []
+      parameters:
+        - in: path
+          name: instrument
+          required: true
+          schema:
+            type: string
+            enum: [au9999, xauusd, comex-gold]
+      responses:
+        "200":
+          description: 成功，统一 code/message/data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer}
+                  message: {type: string}
+                  data:
+                    type: object
+                    properties:
+                      instrument: {$ref: '#/components/schemas/GoldInstrument'}
+        "404":
+          description: 未知行情品种
+        "500":
+          description: 上游不可用且没有可用缓存
+  /api/v1/app/market/gold/instruments/{instrument}/daily:
+    get:
+      operationId: getInstrumentGoldDaily
+      tags: [App Market]
+      summary: 按交易日保存的原始单位日线
+      description: 响应包含 instrument 元数据。国内 CNY/g；伦敦与COMEX为 USD/troy_oz。COMEX为GCZ26延迟报价。实时窗口停更不清空，interval_seconds 为5或真实分钟回退60；不填造缺失样本。
+      security: []
+      parameters:
+        - in: path
+          name: instrument
+          required: true
+          schema:
+            type: string
+            enum: [au9999, xauusd, comex-gold]
+      responses:
+        "200":
+          description: 成功，统一 code/message/data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer}
+                  message: {type: string}
+                  data:
+                    type: object
+                    properties:
+                      instrument: {$ref: '#/components/schemas/GoldInstrument'}
+        "404":
+          description: 未知行情品种
+        "500":
+          description: 上游不可用且没有可用缓存
+  /api/v1/app/market/gold/instruments/{instrument}/realtime:
+    get:
+      operationId: getInstrumentGoldRealtime
+      tags: [App Market]
+      summary: 以最后可用行情为终点的二十分钟走势
+      description: 响应包含 instrument 元数据。国内 CNY/g；伦敦与COMEX为 USD/troy_oz。COMEX为GCZ26延迟报价。实时窗口停更不清空，interval_seconds 为5或真实分钟回退60；不填造缺失样本。
+      security: []
+      parameters:
+        - in: path
+          name: instrument
+          required: true
+          schema:
+            type: string
+            enum: [au9999, xauusd, comex-gold]
+      responses:
+        "200":
+          description: 成功，统一 code/message/data envelope
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer}
+                  message: {type: string}
+                  data:
+                    type: object
+                    properties:
+                      instrument: {$ref: '#/components/schemas/GoldInstrument'}
+        "404":
+          description: 未知行情品种
+        "500":
+          description: 上游不可用且没有可用缓存
+
+  /api/v1/app/market/gold/realtime:
+    get:
+      operationId: getGoldRealtime
+      tags: [App Market]
+      summary: 最后有效行情之前二十分钟的走势
+      description: 后台每5秒向上游采样一次，每个切片保留最近一次真实返回值，按采样时汇率折算人民币每克。time 为服务端采样时间，source_time 为上游报价时间（分钟精度）。失败或过期报价不追加，缺口不插值；采样持久化到 PostgreSQL，以最新有效行情为终点保留二十分钟，停更或重启不清空。停更时末点对应上游最后报价；缺少秒级走势时可回退真实分钟记录，interval_seconds 为 60，按最新可用汇率折算。日线按交易日长期保存。
+      security: []
+      responses:
+        "200":
+          description: 最后可用走势窗口；冷启动且尚未获得历史时可能为空
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      symbol:
+                        type: string
+                        example: XAUUSD
+                      unit:
+                        type: string
+                        enum: [CNY/g]
+                      interval_seconds:
+                        type: integer
+                        enum: [5, 60]
+                        description: 5 为实际五秒采样；60 为秒级历史缺失时的真实分钟记录回退，按最新可用汇率折算。窗口以最后有效行情为终点，停更不会清空。
+                        example: 5
+                      window_seconds:
+                        type: integer
+                        example: 1200
+                      points:
+                        type: array
+                        items:
+                          type: object
+                          required: [time, source_time, price]
+                          properties:
+                            time:
+                              type: string
+                              format: date-time
+                            source_time:
+                              type: string
+                              format: date-time
+                            price:
+                              type: number
+                              description: 采样时人民币每克价格
+
+  /api/v1/app/market/gold/intraday:
+    get:
+      operationId: getGoldIntraday
+      tags: [App Market]
+      summary: 伦敦金最新交易日分钟行情
+      description: XAU/USD 美元/盎司，时间升序，RFC3339 北京时间。缓存 15 秒，上游失败返回缓存并保留原始时间戳。人民币折算需结合 quote 的 usd_cny，不能视作历史人民币成交价。
+      security: []
+      responses:
+        "200":
+          description: 分钟行情
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                    example: 0
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      symbol:
+                        type: string
+                        example: XAUUSD
+                      points:
+                        type: array
+                        items:
+                          type: object
+                          required: [time, price]
+                          properties:
+                            time:
+                              type: string
+                              format: date-time
+                            price:
+                              type: number
+                              description: 美元/盎司
+        "500":
+          description: 行情源不可用且无缓存
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/app/market/gold/daily:
+    get:
+      operationId: getGoldDailyKLines
+      tags: [App Market]
+      summary: 伦敦金日 K 线
+      description: 2006 年至今的日线序列（北京时间交易日），升序；服务端缓存，最后一根为当日盘中实时值。公开接口，无需登录。
+      security: []
+      responses:
+        "200":
+          description: 日线序列
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GoldDailyResponse"
+        "500":
+          description: 行情源不可用且无缓存
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -188,6 +447,21 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
 
   schemas:
+    GoldInstrument:
+      type: object
+      required: [id, name, symbol, kind, currency, unit, quote_source, daily_source, delay_seconds]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        symbol: {type: string}
+        kind: {type: string, enum: [spot, future]}
+        currency: {type: string, enum: [CNY, USD]}
+        unit: {type: string, enum: [CNY/g, USD/troy_oz]}
+        quote_source: {type: string}
+        daily_source: {type: string}
+        delay_seconds: {type: integer, minimum: 0}
+        exchange: {type: string}
+        contract: {type: string}
     HealthResponse:
       type: object
       properties:
@@ -290,3 +564,89 @@ components:
           type: string
         data:
           nullable: true
+
+    GoldQuoteResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 0
+        message:
+          type: string
+          example: ok
+        data:
+          type: object
+          properties:
+            symbol:
+              type: string
+              example: XAUUSD
+            price:
+              type: number
+              example: 4288.66
+            open:
+              type: number
+              example: 4288.66
+            high:
+              type: number
+              example: 4318.02
+            low:
+              type: number
+              example: 4257.40
+            prev_close:
+              type: number
+              example: 4263.94
+            change:
+              type: number
+              example: 24.72
+            change_percent:
+              type: number
+              example: 0.58
+            usd_cny:
+              type: number
+              description: 美元兑人民币汇率（买/卖中间价）；0 表示不可用
+              example: 6.7084
+            cny_per_gram:
+              type: number
+              description: 每克人民币价；0 表示不可用
+              example: 924.98
+            as_of:
+              type: string
+              format: date-time
+              description: 报价时间（RFC3339，北京时间）
+              example: "2026-09-17T13:19:00+08:00"
+
+    GoldDailyResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 0
+        message:
+          type: string
+          example: ok
+        data:
+          type: object
+          properties:
+            symbol:
+              type: string
+              example: XAUUSD
+            bars:
+              type: array
+              items:
+                $ref: "#/components/schemas/GoldDailyBar"
+
+    GoldDailyBar:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+          example: "2026-09-16"
+        open:
+          type: number
+        high:
+          type: number
+        low:
+          type: number
+        close:
+          type: number
