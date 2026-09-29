@@ -119,13 +119,17 @@ struct HomeView: View {
                                     .overlay(GoldTheme.rangeShape.strokeBorder(model.canReset ? GoldTheme.gold : GoldTheme.cardStroke))
                             }.buttonStyle(.plain).disabled(!model.canReset).accessibilityIdentifier("chart.reset")
                         }
-                        HStack {
-                            Text(model.range == .realtime ? "元/克 · 最近 20 分钟" : "截至昨天 · 元/克 · 按最新汇率折算")
-                            Spacer(minLength: 0)
-                            Button { showingHistorySources = true } label: {
-                                Image(systemName: "info.circle").foregroundStyle(GoldTheme.goldSoft)
-                            }.accessibilityLabel("历史数据说明")
-                        }.font(.system(size: 11)).foregroundStyle(GoldTheme.textSecondary)
+                        ViewThatFits(in: .horizontal) {
+                            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                                chartCaption
+                                Spacer(minLength: 0)
+                                ChartWindowSummary(statistics: model.windowStatistics)
+                            }
+                            VStack(alignment: .leading, spacing: 8) {
+                                chartCaption
+                                ChartWindowSummary(statistics: model.windowStatistics)
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                        }
 
                         if model.range == .realtime || model.range.dateBounds() != nil {
                             trendChart
@@ -179,10 +183,21 @@ struct HomeView: View {
         return window.lowerBound.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits)) + " — " + window.upperBound.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits))
     }
 
+    private var chartCaption: some View {
+        HStack(spacing: 8) {
+            Text(model.range == .realtime ? "元/克 · 最近 20 分钟" : "截至昨天 · 元/克 · 按最新汇率折算")
+            Button { showingHistorySources = true } label: {
+                Image(systemName: "info.circle").foregroundStyle(GoldTheme.goldSoft)
+            }.accessibilityLabel("历史数据说明")
+        }.font(.system(size: 11)).foregroundStyle(GoldTheme.textSecondary)
+            .fixedSize(horizontal: true, vertical: false)
+    }
+
     private var trendChart: some View {
         let data = model.visiblePoints
         let domain = model.priceScale.domain(data.map(\.price))
         let baseline = domain.lowerBound
+        let statistics = model.windowStatistics
         return ZStack {
             Chart {
                 ForEach(data, id: \.date) { point in
@@ -201,6 +216,14 @@ struct HomeView: View {
                         PointMark(x: .value("时间", point.date), y: .value("价格刻度", model.priceScale.value(point.price) ?? domain.lowerBound))
                             .foregroundStyle(GoldTheme.gold)
                     }
+                }
+                if let high = statistics.high {
+                    PointMark(x: .value("时间", high.date), y: .value("价格刻度", model.priceScale.value(high.price) ?? baseline))
+                        .foregroundStyle(GoldTheme.goldSoft).symbolSize(24)
+                }
+                if let low = statistics.low, low.price != statistics.high?.price {
+                    PointMark(x: .value("时间", low.date), y: .value("价格刻度", model.priceScale.value(low.price) ?? baseline))
+                        .foregroundStyle(GoldTheme.goldSoft).symbolSize(24)
                 }
                 if let point = model.selectedPoint {
                     RuleMark(x: .value("时间", point.date))
@@ -229,6 +252,14 @@ struct HomeView: View {
                 GeometryReader { geometry in
                     if let plotFrame = proxy.plotFrame {
                         let frame = geometry[plotFrame]
+                        if model.selectedPoint == nil {
+                            if let high = statistics.high {
+                                extremumLabel(high, title: high.price == statistics.low?.price ? "最高 / 最低" : "最高", above: true, other: high.price == statistics.low?.price ? nil : statistics.low, proxy: proxy, frame: frame)
+                            }
+                            if let low = statistics.low, low.price != statistics.high?.price {
+                                extremumLabel(low, title: "最低", above: false, other: statistics.high, proxy: proxy, frame: frame)
+                            }
+                        }
                         ChartGestureSurface(begin: model.beginChartGesture,
                                             transform: model.transformChart,
                                             end: model.endChartGesture,
@@ -265,6 +296,26 @@ struct HomeView: View {
             }
         }
     }
+    @ViewBuilder
+    private func extremumLabel(_ point: MarketChartPoint, title: String, above: Bool, other: MarketChartPoint?, proxy: ChartProxy, frame: CGRect) -> some View {
+        if let value = model.priceScale.value(point.price),
+           let x = proxy.position(forX: point.date), let y = proxy.position(forY: value) {
+            let width = min(126.0, frame.width)
+            let centerX = min(max(frame.minX + x, frame.minX + width / 2), frame.maxX - width / 2)
+            let otherY = other.flatMap { model.priceScale.value($0.price) }.flatMap { proxy.position(forY: $0) }
+            let centerY = frame.minY + ChartExtremaLabelLayout.y(point: y, other: otherY.map { Double($0) }, height: frame.height, above: above)
+            Text(title + " ¥" + point.price.formatted(.number.precision(.fractionLength(2))))
+                .font(.system(size: 11, weight: .medium)).monospacedDigit()
+                .foregroundStyle(GoldTheme.goldSoft)
+                .lineLimit(1).minimumScaleFactor(0.75)
+                .frame(width: width, height: 26)
+                .background(GoldTheme.card.opacity(0.95), in: GoldTheme.rangeShape)
+                .position(x: centerX, y: centerY)
+                .accessibilityLabel(title + " " + point.price.formatted(.number.precision(.fractionLength(2))) + " 元每克")
+                .allowsHitTesting(false)
+        }
+    }
+
     private func overviewLabel(_ date: Date) -> String {
         if model.range != .realtime { return date.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits)) }
         return axisLabel(date)

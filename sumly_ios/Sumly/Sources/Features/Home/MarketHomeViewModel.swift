@@ -225,6 +225,7 @@ final class MarketHomeViewModel {
         let window = xDomain
         return points.filter { window.contains($0.date) }
     }
+    var windowStatistics: ChartWindowStatistics { ChartWindowStatistics(points: windowPoints) }
     var canReset: Bool { xDomain != presetDomain }
     var axisDates: [Date] {
         let window = xDomain

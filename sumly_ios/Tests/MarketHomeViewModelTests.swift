@@ -364,3 +364,26 @@ private actor MutableHomeHistoryFixture: GoldHistoryServicing, GoldQuoteServicin
     #expect(ChartViewport.dayAligned(bounds, bounds: bounds) == bounds)
     #expect(ChartViewport.navigate(bounds, part: .end, fraction: 1, bounds: bounds) == bounds)
 }
+
+@MainActor @Test func viewportStatisticsFollowNavigatorAndIgnorePriceScale() async {
+    let service = HomeMarketFixture()
+    let model = MarketHomeViewModel(dailyService: service, quoteService: service, realtimeService: service, historyService: LargeHomeHistoryFixture())
+    model.range = .quarter
+    await model.refresh()
+    let original = model.windowStatistics
+    model.beginNavigatorGesture()
+    model.moveNavigator(part: .start, fraction: 0.8)
+    model.endChartGesture()
+    let resized = model.windowStatistics
+    #expect(resized.first?.date != original.first?.date)
+    #expect(resized.high == model.windowPoints.max(by: { $0.price < $1.price }))
+    model.beginNavigatorGesture()
+    model.moveNavigator(part: .window, fraction: -0.5)
+    model.endChartGesture()
+    #expect(model.windowStatistics.first?.date != resized.first?.date)
+    let moved = model.windowStatistics
+    model.priceScale = .logarithmic
+    #expect(model.windowStatistics == moved)
+    model.resetViewport()
+    #expect(model.windowStatistics == original)
+}
