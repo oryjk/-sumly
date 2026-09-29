@@ -283,7 +283,7 @@ struct HomeView: View {
                 }
             }
             if data.isEmpty {
-                Text(model.loading || model.historyLoading ? "正在加载走势…" : (model.range == .realtime ? "暂无最新走势" : "暂无走势数据"))
+                Text(model.chartLoading ? "正在加载走势…" : (model.range == .realtime ? "暂无最新走势" : "暂无走势数据"))
                     .font(.caption)
                     .foregroundStyle(GoldTheme.textSecondary)
             }

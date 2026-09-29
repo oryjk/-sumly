@@ -387,3 +387,115 @@ private actor MutableHomeHistoryFixture: GoldHistoryServicing, GoldQuoteServicin
     model.resetViewport()
     #expect(model.windowStatistics == original)
 }
+
+
+private actor RecoveringHomeService: GoldPriceServicing, GoldQuoteServicing, GoldRealtimeServicing {
+    var realtimeCalls = 0
+    let slowDaily: Bool
+    let emptyAfterFirst: Bool
+    init(slowDaily: Bool = false, emptyAfterFirst: Bool = false) {
+        self.slowDaily = slowDaily; self.emptyAfterFirst = emptyAfterFirst
+    }
+    func fetchQuote() async throws -> GoldQuote { try await HomeMarketFixture().fetchQuote() }
+    func fetchDailyPrices() async throws -> [GoldDailyPrice] {
+        if slowDaily { try await Task.sleep(for: .seconds(60)) }
+        return try await HomeMarketFixture().fetchDailyPrices()
+    }
+    func fetchRealtime() async throws -> [MarketChartPoint] {
+        realtimeCalls += 1
+        if slowDaily && realtimeCalls == 1 { throw URLError(.networkConnectionLost) }
+        if emptyAfterFirst && realtimeCalls > 1 { return [] }
+        return try await HomeMarketFixture().fetchRealtime()
+    }
+}
+
+@MainActor @Test func slowDailySyncDoesNotHideRealtimeFailureOrBlockItsRetry() async throws {
+    let service = RecoveringHomeService(slowDaily: true)
+    let model = MarketHomeViewModel(dailyService: service, quoteService: service, realtimeService: service)
+    let task = Task { await model.start() }
+    // Daily sync is still pending. A failed realtime request must leave loading,
+    // then recover through its own five-second polling schedule.
+    try await Task.sleep(for: .milliseconds(300))
+    #expect(!model.loading)
+    #expect(model.message?.contains("失败") == true)
+    try await Task.sleep(for: .seconds(6))
+    #expect(await service.realtimeCalls >= 2)
+    #expect(!model.points.isEmpty)
+    task.cancel()
+    await task.value
+}
+
+@MainActor @Test func emptyRealtimeRefreshRetainsVisibleCurveAndOffersRetry() async {
+    let service = RecoveringHomeService(emptyAfterFirst: true)
+    let model = MarketHomeViewModel(dailyService: service, quoteService: service, realtimeService: service)
+    await model.refresh()
+    let previous = model.points
+    await model.refresh()
+    #expect(!previous.isEmpty)
+    #expect(model.points == previous)
+    #expect(model.message?.contains("失败") == true)
+}
+
+
+private actor SuspendedRealtimeService: GoldRealtimeServicing {
+    private var calls = 0
+    private var pending: [Int: CheckedContinuation<[MarketChartPoint], Never>] = [:]
+    private var waiters: [Int: CheckedContinuation<Void, Never>] = [:]
+    func fetchRealtime() async throws -> [MarketChartPoint] {
+        calls += 1
+        let id = calls
+        return await withCheckedContinuation { continuation in
+            pending[id] = continuation
+            waiters.removeValue(forKey: id)?.resume()
+        }
+    }
+    func waitForCall(_ id: Int) async {
+        if calls >= id { return }
+        await withCheckedContinuation { waiters[id] = $0 }
+    }
+    func resolve(_ id: Int, price: Double) {
+        pending.removeValue(forKey: id)?.resume(returning: [MarketChartPoint(date: .now.addingTimeInterval(-1), price: price)])
+    }
+}
+
+@MainActor @Test func olderRefreshCannotReplaceNewerRealtimeResponse() async {
+    let service = SuspendedRealtimeService()
+    let fixture = HomeMarketFixture()
+    let model = MarketHomeViewModel(dailyService: fixture, quoteService: fixture, realtimeService: service)
+    let first = Task { await model.refresh() }
+    await service.waitForCall(1)
+    let second = Task { await model.refresh() }
+    await service.waitForCall(2)
+    await service.resolve(2, price: 800)
+    await second.value
+    await service.resolve(1, price: 700)
+    await first.value
+    #expect(model.points.first?.price == 800)
+    #expect(!model.chartLoading)
+}
+
+@MainActor @Test func foregroundRestartSurvivesLateCancelledRequest() async {
+    let service = SuspendedRealtimeService()
+    let fixture = HomeMarketFixture()
+    let model = MarketHomeViewModel(dailyService: fixture, quoteService: fixture, realtimeService: service)
+    let backgrounded = Task { await model.start() }
+    await service.waitForCall(1)
+    backgrounded.cancel()
+    let foreground = Task { await model.start() }
+    await service.waitForCall(2)
+    await service.resolve(1, price: 700)
+    await backgrounded.value
+    #expect(model.chartLoading) // Old cancellation must not finish the new load.
+    #expect(model.points.isEmpty)
+    await service.resolve(2, price: 800)
+    // Await the actor-isolated response application without a wall-clock delay.
+    for _ in 0..<1000 {
+        if !model.chartLoading { break }
+        await Task.yield()
+    }
+    #expect(model.points.first?.price == 800)
+    #expect(!model.chartLoading)
+    foreground.cancel()
+    await foreground.value
+    #expect(model.points.first?.price == 800)
+}

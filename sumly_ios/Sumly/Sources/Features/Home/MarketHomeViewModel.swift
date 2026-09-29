@@ -65,7 +65,14 @@ final class MarketHomeViewModel {
         didSet { if daily != oldValue { historyRevision &+= 1 } }
     }
     private(set) var realtime: [MarketChartPoint] = []
-    private(set) var loading = true
+    private var quoteLoading = true
+    private var dailyLoading = true
+    private var realtimeLoading = true
+    private var quoteRequest: UUID?
+    private var dailyRequest: UUID?
+    private var realtimeRequest: UUID?
+    var chartLoading: Bool { range == .realtime ? realtimeLoading : (dailyLoading || historyLoading) }
+    var loading: Bool { (quoteLoading && quote == nil) || (chartLoading && points.isEmpty) }
     private var quoteFailed = false
     private var dailyFailed = false
     private var realtimeFailed = false
@@ -180,25 +187,30 @@ final class MarketHomeViewModel {
     }
 
     func start() async {
-        await refresh()
-        var tick = 0
+        // Each stream owns its retry schedule: slow historical sync must not
+        // prevent live prices recovering after a foreground/network transition.
+        async let quotes: Void = poll(every: .seconds(5)) { await self.loadQuote() }
+        async let realtime: Void = poll(every: .seconds(5)) { await self.loadRealtime() }
+        async let history: Void = poll(every: .seconds(60)) {
+            await self.loadDaily()
+            if self.range != .realtime { await self.loadHistory() }
+        }
+        _ = await (quotes, realtime, history)
+    }
+
+    private func poll(every interval: Duration, operation: @MainActor () async -> Void) async {
         while !Task.isCancelled {
-            do { try await Task.sleep(for: .seconds(5)) } catch { return }
-            await loadQuote()
-            tick += 1
-            await loadRealtime()
-            if tick % 12 == 0 { await loadDaily(); if range != .realtime { await loadHistory() } }
+            await operation()
+            do { try await Task.sleep(for: interval) } catch { return }
         }
     }
 
     func refresh() async {
-        if quote == nil && realtime.isEmpty && daily.isEmpty { loading = true }
         async let q: Void = loadQuote()
         async let d: Void = loadDaily()
         async let i: Void = loadRealtime()
         _ = await (q, d, i)
         if range != .realtime { await loadHistory() }
-        loading = false
     }
 
     var fullDomain: ClosedRange<Date> {
@@ -299,35 +311,55 @@ final class MarketHomeViewModel {
     }
 
     private func loadQuote() async {
+        guard !Task.isCancelled else { return }
+        let request = UUID()
+        quoteRequest = request
+        quoteLoading = true
+        defer { if quoteRequest == request { quoteLoading = false } }
         let generation = cacheGeneration
-        if quote == nil, let cached = await quoteService.cachedQuote(), generation == cacheGeneration { quote = cached }
-        guard generation == cacheGeneration, !Task.isCancelled else { return }
+        if quote == nil, let cached = await quoteService.cachedQuote(), generation == cacheGeneration, quoteRequest == request { quote = cached }
+        guard generation == cacheGeneration, quoteRequest == request, !Task.isCancelled else { return }
         do {
             let fetched = try await quoteService.fetchQuote()
-            guard generation == cacheGeneration, !Task.isCancelled else { return }
+            guard generation == cacheGeneration, quoteRequest == request, !Task.isCancelled else { return }
             quote = fetched; quoteFailed = false
         }
-        catch { if !Task.isCancelled { quoteFailed = true } }
+        catch { if generation == cacheGeneration, quoteRequest == request, !Task.isCancelled { quoteFailed = true } }
     }
     private func loadDaily() async {
+        guard !Task.isCancelled else { return }
+        let request = UUID()
+        dailyRequest = request
+        dailyLoading = true
+        defer { if dailyRequest == request { dailyLoading = false } }
         let generation = cacheGeneration
-        if let cached = await dailyService.cachedDailyPrices(), generation == cacheGeneration { daily = cached }
-        guard generation == cacheGeneration, !Task.isCancelled else { return }
+        if let cached = await dailyService.cachedDailyPrices(), generation == cacheGeneration, dailyRequest == request { daily = cached }
+        guard generation == cacheGeneration, dailyRequest == request, !Task.isCancelled else { return }
         do {
             let fetched = try await dailyService.fetchDailyPrices()
-            guard generation == cacheGeneration, !Task.isCancelled else { return }
+            guard generation == cacheGeneration, dailyRequest == request, !Task.isCancelled else { return }
             daily = fetched; dailyFailed = false
         }
-        catch { if !Task.isCancelled { dailyFailed = true } }
+        catch { if generation == cacheGeneration, dailyRequest == request, !Task.isCancelled { dailyFailed = true } }
     }
     private func loadRealtime() async {
+        guard !Task.isCancelled else { return }
+        let request = UUID()
+        realtimeRequest = request
+        realtimeLoading = true
+        defer { if realtimeRequest == request { realtimeLoading = false } }
         let generation = cacheGeneration
-        guard generation == cacheGeneration, !Task.isCancelled else { return }
+        guard generation == cacheGeneration, realtimeRequest == request, !Task.isCancelled else { return }
         do {
             let fetched = try await realtimeService.fetchRealtime()
-            guard generation == cacheGeneration, !Task.isCancelled else { return }
+            guard generation == cacheGeneration, realtimeRequest == request, !Task.isCancelled else { return }
+            // An empty/invalid refresh is not a replacement for a usable curve.
+            guard !Self.realtimeWindow(fetched, now: .now).isEmpty else {
+                realtimeFailed = true
+                return
+            }
             realtime = fetched; realtimeFailed = false
         }
-        catch { if !Task.isCancelled { realtimeFailed = true } }
+        catch { if generation == cacheGeneration, realtimeRequest == request, !Task.isCancelled { realtimeFailed = true } }
     }
 }
