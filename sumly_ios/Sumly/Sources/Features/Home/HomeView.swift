@@ -119,17 +119,10 @@ struct HomeView: View {
                                     .overlay(GoldTheme.rangeShape.strokeBorder(model.canReset ? GoldTheme.gold : GoldTheme.cardStroke))
                             }.buttonStyle(.plain).disabled(!model.canReset).accessibilityIdentifier("chart.reset")
                         }
-                        ViewThatFits(in: .horizontal) {
-                            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                                chartCaption
-                                Spacer(minLength: 0)
-                                ChartWindowSummary(statistics: model.windowStatistics)
-                            }
-                            VStack(alignment: .leading, spacing: 8) {
-                                chartCaption
-                                ChartWindowSummary(statistics: model.windowStatistics)
-                            }.frame(maxWidth: .infinity, alignment: .leading)
-                        }
+                        VStack(alignment: .leading, spacing: 8) {
+                            chartCaption
+                            ChartWindowSummary(statistics: model.windowStatistics)
+                        }.frame(maxWidth: .infinity, alignment: .leading)
 
                         if model.range == .realtime || model.range.dateBounds() != nil {
                             trendChart
