@@ -9,6 +9,9 @@ import (
 
 func NewRouter(dependencies Dependencies) *gin.Engine {
 	router := gin.New()
+	if err := router.SetTrustedProxies(dependencies.TrustedProxies); err != nil {
+		panic("invalid trusted proxy configuration")
+	}
 	router.Use(gin.Logger(), gin.Recovery())
 	router.Use(localDevelopmentCORS())
 	router.GET("/health", func(c *gin.Context) {
@@ -18,6 +21,9 @@ func NewRouter(dependencies Dependencies) *gin.Engine {
 
 	v1 := router.Group("/api/v1")
 	app := v1.Group("/app")
+	if dependencies.NativeAuth != nil {
+		dependencies.NativeAuth.RegisterRoutes(app)
+	}
 	if dependencies.UserAuth != nil {
 		dependencies.UserAuth.RegisterPublicRoutes(app)
 	}

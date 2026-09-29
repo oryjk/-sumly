@@ -7,6 +7,8 @@ package authsqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createUser = `-- name: CreateUser :one
@@ -82,6 +84,386 @@ func (q *Queries) GetUserByOpenID(ctx context.Context, openid string) (User, err
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const nativeActivateCode = `-- name: NativeActivateCode :execrows
+UPDATE auth_codes SET active=true WHERE key=$1 AND hash=$2
+`
+
+type NativeActivateCodeParams struct {
+	Key  string `json:"key"`
+	Hash string `json:"hash"`
+}
+
+func (q *Queries) NativeActivateCode(ctx context.Context, arg NativeActivateCodeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, nativeActivateCode, arg.Key, arg.Hash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const nativeAttemptCode = `-- name: NativeAttemptCode :one
+UPDATE auth_codes SET attempts=attempts+1 WHERE key=$1 AND active AND expires_at>now() AND attempts<5
+RETURNING hash
+`
+
+func (q *Queries) NativeAttemptCode(ctx context.Context, key string) (string, error) {
+	row := q.db.QueryRow(ctx, nativeAttemptCode, key)
+	var hash string
+	err := row.Scan(&hash)
+	return hash, err
+}
+
+const nativeCleanup = `-- name: NativeCleanup :exec
+WITH q AS (DELETE FROM auth_quotas WHERE expires_at<now()-interval '1 day'),
+c AS (DELETE FROM auth_codes WHERE expires_at<now()-interval '1 day'),
+a AS (DELETE FROM auth_challenges WHERE expires_at<now()),
+h AS (DELETE FROM auth_refresh_history WHERE expires_at<now()),
+s AS (DELETE FROM auth_sessions WHERE expires_at<now()) SELECT 1
+`
+
+func (q *Queries) NativeCleanup(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, nativeCleanup)
+	return err
+}
+
+const nativeConsumeChallenge = `-- name: NativeConsumeChallenge :one
+DELETE FROM auth_challenges WHERE id=$1 AND expires_at>now() RETURNING nonce_hash
+`
+
+func (q *Queries) NativeConsumeChallenge(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRow(ctx, nativeConsumeChallenge, id)
+	var nonce_hash string
+	err := row.Scan(&nonce_hash)
+	return nonce_hash, err
+}
+
+const nativeDeleteCode = `-- name: NativeDeleteCode :exec
+DELETE FROM auth_codes WHERE key=$1
+`
+
+func (q *Queries) NativeDeleteCode(ctx context.Context, key string) error {
+	_, err := q.db.Exec(ctx, nativeDeleteCode, key)
+	return err
+}
+
+const nativeDeleteSession = `-- name: NativeDeleteSession :exec
+DELETE FROM auth_sessions WHERE id=$1
+`
+
+func (q *Queries) NativeDeleteSession(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, nativeDeleteSession, id)
+	return err
+}
+
+const nativeDeleteUser = `-- name: NativeDeleteUser :exec
+DELETE FROM users WHERE id=$1
+`
+
+func (q *Queries) NativeDeleteUser(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, nativeDeleteUser, id)
+	return err
+}
+
+const nativeIdentity = `-- name: NativeIdentity :one
+SELECT i.user_id, i.provider, i.subject, i.password_hash, i.apple_refresh,u.nickname,COALESCE(u.avatar_url,'')::text AS avatar_url,u.status FROM auth_identities i JOIN users u ON u.id=i.user_id WHERE provider=$1 AND subject=$2
+`
+
+type NativeIdentityParams struct {
+	Provider string `json:"provider"`
+	Subject  string `json:"subject"`
+}
+
+type NativeIdentityRow struct {
+	UserID       int64  `json:"user_id"`
+	Provider     string `json:"provider"`
+	Subject      string `json:"subject"`
+	PasswordHash string `json:"password_hash"`
+	AppleRefresh []byte `json:"apple_refresh"`
+	Nickname     string `json:"nickname"`
+	AvatarUrl    string `json:"avatar_url"`
+	Status       string `json:"status"`
+}
+
+func (q *Queries) NativeIdentity(ctx context.Context, arg NativeIdentityParams) (NativeIdentityRow, error) {
+	row := q.db.QueryRow(ctx, nativeIdentity, arg.Provider, arg.Subject)
+	var i NativeIdentityRow
+	err := row.Scan(
+		&i.UserID,
+		&i.Provider,
+		&i.Subject,
+		&i.PasswordHash,
+		&i.AppleRefresh,
+		&i.Nickname,
+		&i.AvatarUrl,
+		&i.Status,
+	)
+	return i, err
+}
+
+const nativeInsertIdentity = `-- name: NativeInsertIdentity :exec
+INSERT INTO auth_identities(user_id,provider,subject,password_hash,apple_refresh) VALUES($1,$2,$3,$4,$5)
+`
+
+type NativeInsertIdentityParams struct {
+	UserID       int64  `json:"user_id"`
+	Provider     string `json:"provider"`
+	Subject      string `json:"subject"`
+	PasswordHash string `json:"password_hash"`
+	AppleRefresh []byte `json:"apple_refresh"`
+}
+
+func (q *Queries) NativeInsertIdentity(ctx context.Context, arg NativeInsertIdentityParams) error {
+	_, err := q.db.Exec(ctx, nativeInsertIdentity,
+		arg.UserID,
+		arg.Provider,
+		arg.Subject,
+		arg.PasswordHash,
+		arg.AppleRefresh,
+	)
+	return err
+}
+
+const nativeInsertSession = `-- name: NativeInsertSession :exec
+INSERT INTO auth_sessions(id,user_id,provider,refresh_hash,authenticated_at,expires_at,family_id) VALUES($1,$2,$3,$4,$5,$6,$7)
+`
+
+type NativeInsertSessionParams struct {
+	ID              string             `json:"id"`
+	UserID          int64              `json:"user_id"`
+	Provider        string             `json:"provider"`
+	RefreshHash     string             `json:"refresh_hash"`
+	AuthenticatedAt pgtype.Timestamptz `json:"authenticated_at"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	FamilyID        string             `json:"family_id"`
+}
+
+func (q *Queries) NativeInsertSession(ctx context.Context, arg NativeInsertSessionParams) error {
+	_, err := q.db.Exec(ctx, nativeInsertSession,
+		arg.ID,
+		arg.UserID,
+		arg.Provider,
+		arg.RefreshHash,
+		arg.AuthenticatedAt,
+		arg.ExpiresAt,
+		arg.FamilyID,
+	)
+	return err
+}
+
+const nativeLock = `-- name: NativeLock :exec
+SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))
+`
+
+func (q *Queries) NativeLock(ctx context.Context, dollar_1 string) error {
+	_, err := q.db.Exec(ctx, nativeLock, dollar_1)
+	return err
+}
+
+const nativeNewChallenge = `-- name: NativeNewChallenge :exec
+INSERT INTO auth_challenges(id,nonce_hash,expires_at) VALUES($1,$2,$3)
+`
+
+type NativeNewChallengeParams struct {
+	ID        string             `json:"id"`
+	NonceHash string             `json:"nonce_hash"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+}
+
+func (q *Queries) NativeNewChallenge(ctx context.Context, arg NativeNewChallengeParams) error {
+	_, err := q.db.Exec(ctx, nativeNewChallenge, arg.ID, arg.NonceHash, arg.ExpiresAt)
+	return err
+}
+
+const nativePutCode = `-- name: NativePutCode :exec
+INSERT INTO auth_codes(key,hash,expires_at) VALUES($1,$2,$3)
+ON CONFLICT(key) DO UPDATE SET hash=EXCLUDED.hash,expires_at=EXCLUDED.expires_at,attempts=0,active=false
+`
+
+type NativePutCodeParams struct {
+	Key       string             `json:"key"`
+	Hash      string             `json:"hash"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+}
+
+func (q *Queries) NativePutCode(ctx context.Context, arg NativePutCodeParams) error {
+	_, err := q.db.Exec(ctx, nativePutCode, arg.Key, arg.Hash, arg.ExpiresAt)
+	return err
+}
+
+const nativeQuota = `-- name: NativeQuota :one
+INSERT INTO auth_quotas(key,count,expires_at) VALUES($1,1,$2)
+ON CONFLICT(key) DO UPDATE SET count=CASE WHEN auth_quotas.expires_at<=now() THEN 1 ELSE auth_quotas.count+1 END,
+expires_at=CASE WHEN auth_quotas.expires_at<=now() THEN EXCLUDED.expires_at ELSE auth_quotas.expires_at END
+RETURNING count
+`
+
+type NativeQuotaParams struct {
+	Key       string             `json:"key"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+}
+
+func (q *Queries) NativeQuota(ctx context.Context, arg NativeQuotaParams) (int32, error) {
+	row := q.db.QueryRow(ctx, nativeQuota, arg.Key, arg.ExpiresAt)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
+const nativeRefresh = `-- name: NativeRefresh :one
+SELECT id,user_id FROM auth_sessions WHERE refresh_hash=$1
+`
+
+type NativeRefreshRow struct {
+	ID     string `json:"id"`
+	UserID int64  `json:"user_id"`
+}
+
+func (q *Queries) NativeRefresh(ctx context.Context, refreshHash string) (NativeRefreshRow, error) {
+	row := q.db.QueryRow(ctx, nativeRefresh, refreshHash)
+	var i NativeRefreshRow
+	err := row.Scan(&i.ID, &i.UserID)
+	return i, err
+}
+
+const nativeRefreshFamily = `-- name: NativeRefreshFamily :one
+SELECT user_id,family_id FROM auth_refresh_history WHERE refresh_hash=$1 AND expires_at>now()
+`
+
+type NativeRefreshFamilyRow struct {
+	UserID   int64  `json:"user_id"`
+	FamilyID string `json:"family_id"`
+}
+
+func (q *Queries) NativeRefreshFamily(ctx context.Context, refreshHash string) (NativeRefreshFamilyRow, error) {
+	row := q.db.QueryRow(ctx, nativeRefreshFamily, refreshHash)
+	var i NativeRefreshFamilyRow
+	err := row.Scan(&i.UserID, &i.FamilyID)
+	return i, err
+}
+
+const nativeRememberRefresh = `-- name: NativeRememberRefresh :exec
+INSERT INTO auth_refresh_history(refresh_hash,user_id,family_id,expires_at) VALUES($1,$2,$3,$4)
+`
+
+type NativeRememberRefreshParams struct {
+	RefreshHash string             `json:"refresh_hash"`
+	UserID      int64              `json:"user_id"`
+	FamilyID    string             `json:"family_id"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+}
+
+func (q *Queries) NativeRememberRefresh(ctx context.Context, arg NativeRememberRefreshParams) error {
+	_, err := q.db.Exec(ctx, nativeRememberRefresh,
+		arg.RefreshHash,
+		arg.UserID,
+		arg.FamilyID,
+		arg.ExpiresAt,
+	)
+	return err
+}
+
+const nativeRevokeFamily = `-- name: NativeRevokeFamily :exec
+DELETE FROM auth_sessions WHERE family_id=$1
+`
+
+func (q *Queries) NativeRevokeFamily(ctx context.Context, familyID string) error {
+	_, err := q.db.Exec(ctx, nativeRevokeFamily, familyID)
+	return err
+}
+
+const nativeRevokeUser = `-- name: NativeRevokeUser :exec
+DELETE FROM auth_sessions WHERE user_id=$1
+`
+
+func (q *Queries) NativeRevokeUser(ctx context.Context, userID int64) error {
+	_, err := q.db.Exec(ctx, nativeRevokeUser, userID)
+	return err
+}
+
+const nativeSession = `-- name: NativeSession :one
+SELECT s.id, s.user_id, s.provider, s.family_id, s.refresh_hash, s.authenticated_at, s.expires_at,u.nickname,COALESCE(u.avatar_url,'')::text AS avatar_url,u.status,i.subject
+FROM auth_sessions s JOIN users u ON u.id=s.user_id JOIN auth_identities i ON i.user_id=s.user_id AND i.provider=s.provider
+WHERE s.id=$1 AND s.expires_at>now() AND u.status='active'
+`
+
+type NativeSessionRow struct {
+	ID              string             `json:"id"`
+	UserID          int64              `json:"user_id"`
+	Provider        string             `json:"provider"`
+	FamilyID        string             `json:"family_id"`
+	RefreshHash     string             `json:"refresh_hash"`
+	AuthenticatedAt pgtype.Timestamptz `json:"authenticated_at"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	Nickname        string             `json:"nickname"`
+	AvatarUrl       string             `json:"avatar_url"`
+	Status          string             `json:"status"`
+	Subject         string             `json:"subject"`
+}
+
+func (q *Queries) NativeSession(ctx context.Context, id string) (NativeSessionRow, error) {
+	row := q.db.QueryRow(ctx, nativeSession, id)
+	var i NativeSessionRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Provider,
+		&i.FamilyID,
+		&i.RefreshHash,
+		&i.AuthenticatedAt,
+		&i.ExpiresAt,
+		&i.Nickname,
+		&i.AvatarUrl,
+		&i.Status,
+		&i.Subject,
+	)
+	return i, err
+}
+
+const nativeSubjectByUser = `-- name: NativeSubjectByUser :one
+SELECT subject FROM auth_identities WHERE user_id=$1 AND provider=$2
+`
+
+type NativeSubjectByUserParams struct {
+	UserID   int64  `json:"user_id"`
+	Provider string `json:"provider"`
+}
+
+func (q *Queries) NativeSubjectByUser(ctx context.Context, arg NativeSubjectByUserParams) (string, error) {
+	row := q.db.QueryRow(ctx, nativeSubjectByUser, arg.UserID, arg.Provider)
+	var subject string
+	err := row.Scan(&subject)
+	return subject, err
+}
+
+const nativeUpdateApple = `-- name: NativeUpdateApple :exec
+UPDATE auth_identities SET apple_refresh=$3 WHERE provider=$1 AND subject=$2
+`
+
+type NativeUpdateAppleParams struct {
+	Provider     string `json:"provider"`
+	Subject      string `json:"subject"`
+	AppleRefresh []byte `json:"apple_refresh"`
+}
+
+func (q *Queries) NativeUpdateApple(ctx context.Context, arg NativeUpdateAppleParams) error {
+	_, err := q.db.Exec(ctx, nativeUpdateApple, arg.Provider, arg.Subject, arg.AppleRefresh)
+	return err
+}
+
+const nativeUpdatePassword = `-- name: NativeUpdatePassword :exec
+UPDATE auth_identities SET password_hash=$2 WHERE provider='email' AND subject=$1
+`
+
+type NativeUpdatePasswordParams struct {
+	Subject      string `json:"subject"`
+	PasswordHash string `json:"password_hash"`
+}
+
+func (q *Queries) NativeUpdatePassword(ctx context.Context, arg NativeUpdatePasswordParams) error {
+	_, err := q.db.Exec(ctx, nativeUpdatePassword, arg.Subject, arg.PasswordHash)
+	return err
 }
 
 const updateUserAppProfile = `-- name: UpdateUserAppProfile :one

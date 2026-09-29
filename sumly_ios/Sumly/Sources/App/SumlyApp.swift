@@ -1,9 +1,10 @@
 import SwiftUI
 import SwiftData
+import AuthenticationServices
 
 @main
 struct SumlyApp: App {
-    /// 本地持仓存储；后续账号体系就绪后迁移到后端同步。
+    /// 本地持仓存储；登录不迁移、上传或同步这些记录。
     private static let holdingsContainer: ModelContainer = {
         do {
             if HoldingsDesignPreview.isEnabled { return try HoldingsDesignPreview.container() }
@@ -26,6 +27,8 @@ struct SumlyApp: App {
 
 private struct GoldRootView: View {
     @State private var selectedTab = HoldingsDesignPreview.isEnabled ? 1 : 0
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var session = AuthSession(service: NativeAuthService(baseURL: BackendGoldPriceService.defaultBaseURL), store: KeychainCredentialStore())
     @State private var showingAdd = false
     @State private var showingNotice = false
 
@@ -36,6 +39,9 @@ private struct GoldRootView: View {
                 GoldTheme.background.ignoresSafeArea()
                 if selectedTab == 0 {
                     HomeView()
+                } else if selectedTab == 3 {
+                    AccountView(session: session)
+                        .padding(.bottom, 80 * scale)
                 } else {
                     HoldingsView()
                         .padding(.bottom, 80 * scale)
@@ -51,7 +57,23 @@ private struct GoldRootView: View {
         .alert("功能尚未接入", isPresented: $showingNotice) {
             Button("知道了", role: .cancel) {}
         } message: {
-            Text("记账与个人中心暂未开放。")
+            Text("记账功能暂未开放。")
+        }
+        .task {
+            await session.restore()
+            await session.checkAppleCredential(using: SystemAppleCredentialChecker())
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task {
+                await session.restore()
+                await session.checkAppleCredential(using: SystemAppleCredentialChecker())
+            } }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: ASAuthorizationAppleIDProvider.credentialRevokedNotification)) { _ in
+            if session.stored?.appleUserID != nil {
+                session.clearLocal()
+                session.notice = "Apple 授权已撤销，请重新登录。"
+            }
         }
         .persistentSystemOverlays(.hidden)
     }
@@ -85,7 +107,7 @@ private struct GoldRootView: View {
 
     private func tabItem(_ title: String, symbol: String, index: Int, scale: CGFloat) -> some View {
         Button {
-            if index < 2 { selectedTab = index } else { showingNotice = true }
+            if index < 2 || index == 3 { selectedTab = index } else { showingNotice = true }
         } label: {
             VStack(spacing: 7 * scale) {
                 if index == 1 {

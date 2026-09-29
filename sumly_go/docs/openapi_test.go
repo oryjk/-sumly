@@ -20,6 +20,19 @@ func TestEmbeddedOpenAPISpecIsValid(t *testing.T) {
 	for _, path := range []string{
 		"/health",
 		"/api/v1/app/auth/wechat/login",
+		"/api/v1/app/auth/apple/challenge",
+		"/api/v1/app/auth/apple/login",
+		"/api/v1/app/auth/phone/code",
+		"/api/v1/app/auth/phone/login",
+		"/api/v1/app/auth/email/code",
+		"/api/v1/app/auth/email/register",
+		"/api/v1/app/auth/email/login",
+		"/api/v1/app/auth/email/reset-password",
+		"/api/v1/app/auth/refresh",
+		"/api/v1/app/auth/logout",
+		"/api/v1/app/auth/me",
+		"/api/v1/app/auth/account",
+		"/api/v1/app/auth/capabilities",
 		"/api/v1/app/users/me",
 	} {
 		if document.Paths.Find(path) == nil {

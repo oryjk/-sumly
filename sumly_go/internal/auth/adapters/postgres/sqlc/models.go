@@ -8,6 +8,51 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AuthChallenge struct {
+	ID        string             `json:"id"`
+	NonceHash string             `json:"nonce_hash"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+}
+
+type AuthCode struct {
+	Key       string             `json:"key"`
+	Hash      string             `json:"hash"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	Attempts  int32              `json:"attempts"`
+	Active    bool               `json:"active"`
+}
+
+type AuthIdentity struct {
+	UserID       int64  `json:"user_id"`
+	Provider     string `json:"provider"`
+	Subject      string `json:"subject"`
+	PasswordHash string `json:"password_hash"`
+	AppleRefresh []byte `json:"apple_refresh"`
+}
+
+type AuthQuota struct {
+	Key       string             `json:"key"`
+	Count     int32              `json:"count"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+}
+
+type AuthRefreshHistory struct {
+	RefreshHash string             `json:"refresh_hash"`
+	UserID      int64              `json:"user_id"`
+	FamilyID    string             `json:"family_id"`
+	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+}
+
+type AuthSession struct {
+	ID              string             `json:"id"`
+	UserID          int64              `json:"user_id"`
+	Provider        string             `json:"provider"`
+	FamilyID        string             `json:"family_id"`
+	RefreshHash     string             `json:"refresh_hash"`
+	AuthenticatedAt pgtype.Timestamptz `json:"authenticated_at"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+}
+
 type GoldDailyBar struct {
 	Symbol      string             `json:"symbol"`
 	TradingDate pgtype.Date        `json:"trading_date"`

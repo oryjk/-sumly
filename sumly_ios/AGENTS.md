@@ -3,8 +3,9 @@
 ## 项目定位
 
 sumly 的 iOS 原生端，`SwiftUI + Swift 6 + Swift Charts + XcodeGen`，iOS 17 起。
-当前功能：首页国际金价（伦敦金 XAU/USD）日线走势；行情暂直连新浪财经，
-登录与资产能力后续接 `../sumly_go`。
+当前功能：后端黄金行情、本地 SwiftData 持仓与记账、原生账户中心。
+Apple、+86 手机验证码、邮箱注册/密码登录接 `../sumly_go`；持仓仍只保存在本机，
+登录不代表云同步，不得在登录、切换或注销账户时清除/重新归属本地持仓。
 
 ## 常用命令
 
@@ -24,6 +25,7 @@ Sumly/Sources/
   App/                     # 应用入口
   DesignSystem/            # GoldTheme 令牌 + 通用卡片/胶囊样式
   Features/Home/           # 首页（视图、ViewModel、PriceRange 切片）
+  Features/Account/        # 账户 UI；Core 内为服务、Keychain、会话、表单和 Apple 状态
   GoldMarket/              # 金价模型 + GoldPriceServicing 协议与实现
 Sumly/Resources/           # Assets.xcassets
 Tests/                     # 单测（解析/切片/ViewModel）
@@ -45,6 +47,11 @@ scripts/make_appicon.py    # AppIcon 生成脚本（Pillow，可选）
   `HoldingsStats` 纯函数，别在视图里散落算式。
 - 新功能目录 `Sumly/Sources/Features/<Name>/`：View + ViewModel（`@MainActor @Observable`）
   + 纯逻辑类型分离，纯逻辑（解析、切片等）必须有对应单测。
+- 认证 API 契约以 `../sumly_go/docs/openapi.yaml` 为准。Apple challenge 的 nonce 原样传递，
+  不重复哈希；服务端配置不可用时不能使用假登录/验证码兜底。
+- 登录尝试代际与已建立会话代际必须分开：关闭表单或失败重登不能丢弃已提交的刷新结果；
+  真正退出、账号替换则必须阻止旧请求复活。注销重验绑定原用户 ID/provider，不能改删其他账号。
+- 凭据只存专属 Keychain；退出标记用于防止删除失败后恢复旧凭据，禁止存储密码/验证码。
 - Swift 6 严格并发：服务层 `Sendable`，可变共享状态用 actor，不用 `NSLock`。
 - 日期一律存「当地时区当天正午」的 `Date`（见 `SinaGoldPriceService.parseDay`），
   避免时区/夏令时导致的日期漂移。

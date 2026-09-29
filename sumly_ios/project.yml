@@ -20,6 +20,11 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.oryjk.sumly
         TARGETED_DEVICE_FAMILY: "1,2"
+    entitlements:
+      path: Sumly/Support/Sumly.entitlements
+      properties:
+        com.apple.developer.applesignin:
+          - Default
     info:
       path: Sumly/Support/Info.plist
       properties:

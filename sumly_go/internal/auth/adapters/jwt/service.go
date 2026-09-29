@@ -19,6 +19,8 @@ type Service struct {
 }
 
 type actorClaims struct {
+	SessionID    string               `json:"sid,omitempty"`
+	Native       bool                 `json:"native,omitempty"`
 	ActorKind    sharedauth.ActorKind `json:"actor_kind"`
 	ActorID      int64                `json:"actor_id"`
 	IsSuperAdmin bool                 `json:"is_super_admin,omitempty"`
@@ -60,7 +62,7 @@ func (s *Service) Parse(_ context.Context, tokenString string) (sharedauth.Actor
 	if err != nil {
 		return sharedauth.Actor{}, fmt.Errorf("parse JWT: %w", err)
 	}
-	if !token.Valid || claims.ActorID <= 0 {
+	if !token.Valid || claims.ActorID <= 0 || claims.Native || claims.SessionID != "" {
 		return sharedauth.Actor{}, errors.New("invalid JWT actor")
 	}
 	if claims.ActorKind != sharedauth.ActorUser && claims.ActorKind != sharedauth.ActorAdmin {

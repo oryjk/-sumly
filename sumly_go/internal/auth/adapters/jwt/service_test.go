@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"gitee.com/oryjk/sumly/sumly_go/internal/auth/domain"
 	sharedauth "gitee.com/oryjk/sumly/sumly_go/internal/shared/auth"
 )
 
@@ -72,5 +73,23 @@ func TestServiceRejectsTokenSignedWithAnotherSecret(t *testing.T) {
 func TestServiceRejectsShortSecret(t *testing.T) {
 	if _, err := NewService("too-short", time.Hour); err == nil {
 		t.Fatal("expected short secret error")
+	}
+}
+
+func TestLegacyParserRejectsNativeSessionTokens(t *testing.T) {
+	s, _ := NewService("01234567890123456789012345678901", time.Hour)
+	token, e := s.IssueNative(context.Background(), domain.Session{ID: "session", UserID: 1})
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.Parse(context.Background(), token); e == nil {
+		t.Fatal("native token accepted without live session check")
+	}
+	if id, e := s.ParseNative(context.Background(), token); e != nil || id != "session" {
+		t.Fatal(id, e)
+	}
+	legacy, _ := s.IssueUser(context.Background(), 1)
+	if _, e = s.ParseNative(context.Background(), legacy); e == nil {
+		t.Fatal("legacy token accepted as native")
 	}
 }

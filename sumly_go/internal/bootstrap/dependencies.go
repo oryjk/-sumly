@@ -3,10 +3,6 @@ package bootstrap
 import (
 	"context"
 	"fmt"
-	"gitee.com/oryjk/sumly/sumly_go/internal/market/adapters/feed"
-	"gitee.com/oryjk/sumly/sumly_go/internal/market/adapters/sge"
-	"gitee.com/oryjk/sumly/sumly_go/internal/market/adapters/yahoo"
-	"gitee.com/oryjk/sumly/sumly_go/internal/market/domain"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -14,12 +10,17 @@ import (
 
 	authhttp "gitee.com/oryjk/sumly/sumly_go/internal/auth/adapters/http"
 	"gitee.com/oryjk/sumly/sumly_go/internal/auth/adapters/jwt"
+	authpostgres "gitee.com/oryjk/sumly/sumly_go/internal/auth/adapters/postgres"
 	"gitee.com/oryjk/sumly/sumly_go/internal/auth/adapters/wechat"
 	authapplication "gitee.com/oryjk/sumly/sumly_go/internal/auth/application"
+	"gitee.com/oryjk/sumly/sumly_go/internal/market/adapters/feed"
 	markethttp "gitee.com/oryjk/sumly/sumly_go/internal/market/adapters/http"
 	marketpostgres "gitee.com/oryjk/sumly/sumly_go/internal/market/adapters/postgres"
+	"gitee.com/oryjk/sumly/sumly_go/internal/market/adapters/sge"
 	"gitee.com/oryjk/sumly/sumly_go/internal/market/adapters/sina"
+	"gitee.com/oryjk/sumly/sumly_go/internal/market/adapters/yahoo"
 	marketapplication "gitee.com/oryjk/sumly/sumly_go/internal/market/application"
+	"gitee.com/oryjk/sumly/sumly_go/internal/market/domain"
 	userhttp "gitee.com/oryjk/sumly/sumly_go/internal/user/adapters/http"
 	userpostgres "gitee.com/oryjk/sumly/sumly_go/internal/user/adapters/postgres"
 	userapplication "gitee.com/oryjk/sumly/sumly_go/internal/user/application"
@@ -32,6 +33,8 @@ const (
 )
 
 type Dependencies struct {
+	NativeAuth      *authhttp.NativeHandler
+	TrustedProxies  []string
 	GoldInstruments *markethttp.InstrumentsHandler
 	AuthMiddleware  *authhttp.Middleware
 	UserAuth        *authhttp.Handler
@@ -56,7 +59,11 @@ func BuildDependencies(ctx context.Context, config Config) (Dependencies, func()
 		closePool()
 		return Dependencies{}, nil, fmt.Errorf("create JWT service: %w", err)
 	}
-	authMiddleware := authhttp.NewMiddleware(tokens)
+	nativeHandler, authMiddleware, err := buildNative(config, pool, tokens)
+	if err != nil {
+		closePool()
+		return Dependencies{}, nil, err
+	}
 
 	userRepository := userpostgres.NewRepository(pool)
 	appUserService := userapplication.NewAppService(userRepository)
@@ -98,6 +105,27 @@ func BuildDependencies(ctx context.Context, config Config) (Dependencies, func()
 	instrumentsHandler := markethttp.NewInstrumentsHandler(marketapplication.NewInstruments(markets))
 	samplerCtx, stopSampler := context.WithCancel(ctx)
 	var workers sync.WaitGroup
+	if config.Native.Enabled {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			ticker := time.NewTicker(time.Hour)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-samplerCtx.Done():
+					return
+				case <-ticker.C:
+					cleanupCtx, cancel := context.WithTimeout(samplerCtx, 30*time.Second)
+					if err := authpostgres.NewNativeStore(pool).Cleanup(cleanupCtx); err != nil {
+						slog.Warn("native auth cleanup failed")
+					}
+					cancel()
+				}
+			}
+		}()
+	}
+
 	services := []*marketapplication.GoldMarketService{goldMarketService}
 	for _, m := range markets {
 		services = append(services, m.Service)
@@ -110,6 +138,8 @@ func BuildDependencies(ctx context.Context, config Config) (Dependencies, func()
 	closeAll := func() { stopSampler(); workers.Wait(); closePool() }
 
 	return Dependencies{
+		NativeAuth:      nativeHandler,
+		TrustedProxies:  config.Native.TrustedProxies,
 		GoldInstruments: instrumentsHandler,
 		AuthMiddleware:  &authMiddleware,
 		UserAuth:        userAuthHandler,

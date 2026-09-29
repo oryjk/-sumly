@@ -17,6 +17,7 @@ const (
 )
 
 type Config struct {
+	Native          NativeConfig
 	HTTPAddr        string
 	DatabaseURL     string
 	JWTSecret       string
@@ -47,6 +48,11 @@ func LoadConfig() (Config, error) {
 		if value == "" {
 			return Config{}, fmt.Errorf("%s is required", name)
 		}
+	}
+	var err error
+	config.Native, err = loadNativeConfig()
+	if err != nil {
+		return Config{}, err
 	}
 	return config, nil
 }

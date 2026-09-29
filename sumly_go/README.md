@@ -110,3 +110,82 @@ COMEX 数据源为延迟报价，标记 `delay_seconds:1800`，不是交易所�
 旧 `/market/gold/{quote,realtime,daily,intraday}` 仍表示伦敦黄金，旧实时图仍为 `CNY/g`，供现有 iOS 使用；本次未更改前端。旧报价开盘字段同时纠正为新浪第8项（第2项实际是买价）。
 
 六边形职责：`domain` 描述品种、报价与窗口；`application` 编排行情缓存、采样、窗口及历史；`ports` 描述报价、日线、分时与存储能力；`adapters/sina|sge|yahoo` 请求供应商，`adapters/feed` 组合不同来源，`adapters/postgres` 使用 sqlc，`adapters/http` 只处理协议与 DTO；`bootstrap` 完成注入及采集生命周期管理。
+
+## Native account authentication
+
+Apply forward migration `00004_native_auth.sql` before setting
+`NATIVE_AUTH_ENABLED=true`. Existing WeChat/dev routes and user data are preserved.
+Run `go run ./cmd/dbmigrate` with the deployment's approved `DATABASE_URL` configured
+(or `make migrate-up` in an explicitly selected environment). Do not run migrations
+against production as part of tests. Generate SQL bindings with `make generate`
+(sqlc v1.31.1; an installed `sqlc generate` of that version is equivalent).
+
+The exact native contract is in `docs/openapi.yaml`, under `/api/v1/app/auth`:
+capabilities; Apple challenge/login; phone code/login; email code/register/login/
+reset-password; refresh/logout; me; DELETE account. Responses retain the
+`{code,message,data}` envelope. Phone login automatically creates a verified account;
+email registration needs a code. No provider linking or holdings synchronization occurs.
+Native user identifiers come only from verified identities, never editable profiles.
+Apple email is not used for linking or as a verified email-password identity.
+
+Configuration (blank provider fields disable that provider):
+
+| Variables | Required setup |
+| --- | --- |
+| `NATIVE_AUTH_ENABLED` | Explicit `true`; default false reports all capabilities false. |
+| `JWT_SECRET` | At least 32 random bytes. HMAC domain separation derives OTP/refresh digests and the AES-GCM Apple token encryption key. Keep stable and secret: changing it also makes stored Apple credentials unreadable; migrate/re-encrypt them before rotation. |
+| `APPLE_CLIENT_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY_FILE` | Enable Sign in with Apple for the iOS App ID in the Apple Developer portal. Client ID must equal the app's bundle ID audience. Create an associated Sign in with Apple key, mount its PKCS8 `.p8` securely and read-only, and provide its path. No portal changes are made by this implementation. |
+| `ALIYUN_ACCESS_KEY_ID`, `ALIYUN_ACCESS_KEY_SECRET`, `ALIYUN_SMS_SIGN_NAME`, `ALIYUN_SMS_TEMPLATE_CODE` | Alibaba Cloud mainland SMS account, least-privilege SendSms access, approved sign name and verification template containing `${code}`. Adapter signs HTTPS RPC SendSms (2017-05-25). Only mainland +86 mobile delivery is supported. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TLS_MODE` | Authenticated sender with authorized From mailbox. Mode explicitly `tls` (usually port 465) or `starttls` (usually 587). Certificate verification and TLS >=1.2 are mandatory; no plaintext fallback. Configure sender-domain SPF/DKIM/DMARC with the mail operator. |
+| `TRUSTED_PROXY_CIDRS` | Comma-separated explicit proxy CIDRs. Empty trusts no forwarded IPs. Configure only actual ingress proxies and ensure they replace untrusted forwarded headers. |
+
+Security and limits:
+
+- OTPs: six cryptographically random digits, HMAC stored, 300-second expiry,
+  five failed guesses, single-use atomic consumption. Resend invalidates previous code.
+  Delivery must succeed before a code becomes usable. Failed delivery still spends quota.
+- Persistent send limits: 60-second destination cooldown, 5/destination/hour,
+  20/destination/day (email purposes share limits), 30/IP/hour, 1000 globally/hour.
+  Login/password operations: 20/identity/hour and 60/IP/hour before Argon2id work.
+  Apple challenge/login each allow 20/IP/hour and 1000 globally/hour.
+  Rate-limit storage failure fails closed; 429 includes `Retry-After: 60` (a minimum,
+  longer quota windows can require a longer wait).
+- Email addresses trim surrounding whitespace and lowercase; dots and plus tags remain.
+  Passwords are exactly 12–128 Unicode code points and <=512 UTF-8 bytes, never trimmed.
+  Argon2id uses 19 MiB, two iterations, one lane, random 16-byte salt, 32-byte hash.
+- Apple verifies trusted JWKS RS256, issuer, audience, expiry, issued-at, subject and
+  server nonce on both supplied and code-exchanged ID tokens. Challenge nonce is already
+  the exact value to send to Apple, **do not hash it on iOS**. Refresh credentials are
+  AES-GCM encrypted. JWKS requests/cache refresh and all external responses are bounded.
+- Access JWT lifetime is 900 seconds with live database session and user-state checks,
+  including existing authenticated app routes. Opaque refresh tokens rotate once,
+  are hashed at rest, and expire 30 days after primary login. Logout revokes the family
+  even if its submitted token has already rotated. Reset revokes all native sessions.
+- Deletion requires `confirmation: "DELETE"` and primary login within 5 minutes.
+  Refresh does not renew that timestamp. Apple revocation occurs while holding the
+  deletion transaction's account lock; failure returns 503 without claiming deletion.
+  If remote revocation succeeds but database commit fails, retry deletion (revocation
+  is idempotent). Local guest holdings are not account data and remain on the device.
+- Auth HTTP bodies are limited to 32 KiB, operations have deadlines, and errors never
+  return provider secrets, OTPs, password hashes or raw upstream responses. There is no
+  production fake/console delivery. Expired auth records are cleaned hourly while enabled.
+
+### Verification and real-device checklist
+
+Tests use fake transports/delivery and disposable PostgreSQL schemas; they never send
+real SMS/email. Set **only** `TEST_DATABASE_URL` to an explicitly disposable test DB,
+then run `go test ./...`, `go test -race ./...`, `go vet ./...`, and
+`go build -o /tmp/sumly-native-auth-api ./cmd/api`. Tests never fall back to `DATABASE_URL`
+and never launch Docker. Without the test variable, database tests explicitly skip.
+The test role needs CREATE/DROP SCHEMA rights. When sandboxed, use a writable `GOCACHE`.
+
+After credentials and approved staging infrastructure are configured, manually verify
+on a real device: Apple challenge/state/nonce and cancellation; returning Apple user;
+Aliyun receipt and resend cooldown; email registration/login/reset; app restart and
+refresh rotation; logout/revoked JWT rejection; frozen-user rejection; recent-login
+account deletion and Apple revocation. Use designated test accounts and explicitly
+approved real message delivery. These live-provider checks are not part of local tests.
+
+Provider protocol references: [Apple identity verification](https://developer.apple.com/documentation/signinwithapple/verifying-a-user),
+[Apple account deletion/revocation](https://developer.apple.com/documentation/technotes/tn3194-handling-account-deletions-and-revoking-tokens-for-sign-in-with-apple),
+[Aliyun RPC signing](https://www.alibabacloud.com/help/en/sms/signature-method).

@@ -8,6 +8,51 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AuthChallenge struct {
+	ID        string
+	NonceHash string
+	ExpiresAt pgtype.Timestamptz
+}
+
+type AuthCode struct {
+	Key       string
+	Hash      string
+	ExpiresAt pgtype.Timestamptz
+	Attempts  int32
+	Active    bool
+}
+
+type AuthIdentity struct {
+	UserID       int64
+	Provider     string
+	Subject      string
+	PasswordHash string
+	AppleRefresh []byte
+}
+
+type AuthQuota struct {
+	Key       string
+	Count     int32
+	ExpiresAt pgtype.Timestamptz
+}
+
+type AuthRefreshHistory struct {
+	RefreshHash string
+	UserID      int64
+	FamilyID    string
+	ExpiresAt   pgtype.Timestamptz
+}
+
+type AuthSession struct {
+	ID              string
+	UserID          int64
+	Provider        string
+	FamilyID        string
+	RefreshHash     string
+	AuthenticatedAt pgtype.Timestamptz
+	ExpiresAt       pgtype.Timestamptz
+}
+
 type GoldDailyBar struct {
 	Symbol      string
 	TradingDate pgtype.Date

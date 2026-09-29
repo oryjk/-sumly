@@ -28,7 +28,388 @@ x-standard-errors: &standardErrors
   "500":
     $ref: "#/components/responses/InternalError"
 
+x-native-errors: &nativeErrors
+  "401":
+    $ref: "#/components/responses/Unauthorized"
+  "403":
+    $ref: "#/components/responses/Forbidden"
+  "409":
+    $ref: "#/components/responses/Conflict"
+  "422":
+    $ref: "#/components/responses/ValidationError"
+  "429":
+    description: "Rate limit; Retry-After: 60 (minimum)"
+    content:
+      "application/json":
+        schema:
+          $ref: "#/components/schemas/ErrorResponse"
+  "503":
+    description: "Provider disabled or temporarily unavailable"
+    content:
+      "application/json":
+        schema:
+          $ref: "#/components/schemas/ErrorResponse"
+
 paths:
+  /api/v1/app/auth/capabilities:
+    get:
+      tags: ["App Auth"]
+      operationId: "nativeCapabilities"
+      summary: "Provider availability; missing credentials and global disable return false."
+      security: []
+      responses:
+        <<: *nativeErrors
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/NativeCapabilitiesResponse"
+
+  /api/v1/app/auth/apple/challenge:
+    post:
+      tags: ["App Auth"]
+      operationId: "nativeAppleChallenge"
+      summary: "Single-use five-minute server nonce."
+      security: []
+      responses:
+        <<: *nativeErrors
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/NativeChallengeResponse"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              type: "object"
+              properties: {}
+              required: []
+              additionalProperties: false
+
+  /api/v1/app/auth/apple/login:
+    post:
+      tags: ["App Auth"]
+      operationId: "nativeAppleLogin"
+      summary: "Verified Apple identity and authorization code. Nickname is optional; never links accounts by email."
+      security: []
+      responses:
+        <<: *nativeErrors
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/NativeLoginResultResponse"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              type: "object"
+              properties:
+                challenge_id:
+                  type: "string"
+                identity_token:
+                  type: "string"
+                authorization_code:
+                  type: "string"
+                nickname:
+                  type: "string"
+                  maxLength: 120
+              required: ["challenge_id", "identity_token", "authorization_code"]
+              additionalProperties: false
+
+  /api/v1/app/auth/phone/code:
+    post:
+      tags: ["App Auth"]
+      operationId: "nativePhoneCode"
+      summary: "Mainland China SMS. Cooldown 60s; 5 sends/hour, 20/day per destination; 30/IP/hour and 1000 global/hour. Five guesses, five-minute validity."
+      security: []
+      responses:
+        <<: *nativeErrors
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/NativeCodeSentResponse"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              type: "object"
+              properties:
+                phone_number:
+                  type: "string"
+                  description: "Mainland China mobile, local 11 digits or +86 E.164."
+              required: ["phone_number"]
+              additionalProperties: false
+
+  /api/v1/app/auth/phone/login:
+    post:
+      tags: ["App Auth"]
+      operationId: "nativePhoneLogin"
+      summary: "First verified phone auto-registers."
+      security: []
+      responses:
+        <<: *nativeErrors
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/NativeLoginResultResponse"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              type: "object"
+              properties:
+                phone_number:
+                  type: "string"
+                  description: "Mainland China mobile, local 11 digits or +86 E.164."
+                code:
+                  type: "string"
+                  pattern: "^[0-9]{6}$"
+              required: ["phone_number", "code"]
+              additionalProperties: false
+
+  /api/v1/app/auth/email/code:
+    post:
+      tags: ["App Auth"]
+      operationId: "nativeEmailCode"
+      summary: "Non-enumerating send response; same quotas as phone, shared across email purposes."
+      security: []
+      responses:
+        <<: *nativeErrors
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/NativeCodeSentResponse"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              type: "object"
+              properties:
+                email:
+                  type: "string"
+                  format: "email"
+                  maxLength: 254
+                purpose:
+                  type: "string"
+                  enum: ["register", "reset_password"]
+              required: ["email", "purpose"]
+              additionalProperties: false
+
+  /api/v1/app/auth/email/register:
+    post:
+      tags: ["App Auth"]
+      operationId: "nativeEmailRegister"
+      summary: "Requires email verification; duplicate identities never overwrite credentials."
+      security: []
+      responses:
+        <<: *nativeErrors
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/NativeLoginResultResponse"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              type: "object"
+              properties:
+                email:
+                  type: "string"
+                  format: "email"
+                  maxLength: 254
+                password:
+                  type: "string"
+                  minLength: 12
+                  maxLength: 128
+                  description: "12–128 Unicode code points, at most 512 UTF-8 bytes; never trimmed."
+                code:
+                  type: "string"
+                  pattern: "^[0-9]{6}$"
+              required: ["email", "password", "code"]
+              additionalProperties: false
+
+  /api/v1/app/auth/email/login:
+    post:
+      tags: ["App Auth"]
+      operationId: "nativeEmailLogin"
+      summary: "Generic invalid credentials. Persistent password/IP quotas before hashing."
+      security: []
+      responses:
+        <<: *nativeErrors
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/NativeLoginResultResponse"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              type: "object"
+              properties:
+                email:
+                  type: "string"
+                  format: "email"
+                  maxLength: 254
+                password:
+                  type: "string"
+                  minLength: 12
+                  maxLength: 128
+                  description: "12–128 Unicode code points, at most 512 UTF-8 bytes; never trimmed."
+              required: ["email", "password"]
+              additionalProperties: false
+
+  /api/v1/app/auth/email/reset-password:
+    post:
+      tags: ["App Auth"]
+      operationId: "nativeEmailResetPassword"
+      summary: "Single-use verified code; changes existing identity only and revokes all native sessions. Does not log in."
+      security: []
+      responses:
+        <<: *nativeErrors
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/NativeEmptyResponse"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              type: "object"
+              properties:
+                email:
+                  type: "string"
+                  format: "email"
+                  maxLength: 254
+                code:
+                  type: "string"
+                  pattern: "^[0-9]{6}$"
+                new_password:
+                  type: "string"
+                  minLength: 12
+                  maxLength: 128
+                  description: "12–128 Unicode code points, at most 512 UTF-8 bytes; never trimmed."
+              required: ["email", "code", "new_password"]
+              additionalProperties: false
+
+  /api/v1/app/auth/refresh:
+    post:
+      tags: ["App Auth"]
+      operationId: "nativeRefresh"
+      summary: "Single-use opaque refresh rotation; absolute 30-day lifetime. Does not renew primary authentication time."
+      security: []
+      responses:
+        <<: *nativeErrors
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/NativeLoginResultResponse"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              type: "object"
+              properties:
+                refresh_token:
+                  type: "string"
+              required: ["refresh_token"]
+              additionalProperties: false
+
+  /api/v1/app/auth/logout:
+    post:
+      tags: ["App Auth"]
+      operationId: "nativeLogout"
+      summary: "Idempotent session-family revocation, including already rotated tokens."
+      security: []
+      responses:
+        <<: *nativeErrors
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/NativeEmptyResponse"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              type: "object"
+              properties:
+                refresh_token:
+                  type: "string"
+              required: ["refresh_token"]
+              additionalProperties: false
+
+  /api/v1/app/auth/me:
+    get:
+      tags: ["App Auth"]
+      operationId: "nativeMe"
+      summary: "Requires live native session and active user; legacy tokens are rejected."
+      security: [{"bearerAuth": []}]
+      responses:
+        <<: *nativeErrors
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/NativeUserResponse"
+
+  /api/v1/app/auth/account:
+    delete:
+      tags: ["App Auth"]
+      operationId: "nativeAccount"
+      summary: "Requires primary login in last 5 minutes. Revokes Apple token and transactionally deletes server account. Local device holdings remain untouched."
+      security: [{"bearerAuth": []}]
+      responses:
+        <<: *nativeErrors
+        "200":
+          description: "Success"
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/NativeEmptyResponse"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              type: "object"
+              properties:
+                confirmation:
+                  type: "string"
+                  enum: ["DELETE"]
+              required: ["confirmation"]
+              additionalProperties: false
+
   /health:
     get:
       operationId: getHealth
@@ -447,6 +828,145 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
 
   schemas:
+    NativeUser:
+      type: "object"
+      properties:
+        id:
+          type: "integer"
+          format: "int64"
+        nickname:
+          type: "string"
+        avatar_url:
+          type: "string"
+        email:
+          type: "string"
+          format: "email"
+          maxLength: 254
+          nullable: true
+        phone_number:
+          type: "string"
+          nullable: true
+        status:
+          type: "string"
+          enum: ["active", "frozen"]
+        provider:
+          type: "string"
+          enum: ["apple", "phone", "email"]
+      required: ["id", "nickname", "avatar_url", "email", "phone_number", "status", "provider"]
+    NativeLoginResult:
+      type: "object"
+      properties:
+        token:
+          type: "string"
+        refresh_token:
+          type: "string"
+        expires_in:
+          type: "integer"
+          enum: [900]
+        user:
+          $ref: "#/components/schemas/NativeUser"
+      required: ["token", "refresh_token", "expires_in", "user"]
+    NativeCapabilities:
+      type: "object"
+      properties:
+        apple:
+          type: "boolean"
+        phone:
+          type: "boolean"
+        email:
+          type: "boolean"
+      required: ["apple", "phone", "email"]
+    NativeChallenge:
+      type: "object"
+      properties:
+        challenge_id:
+          type: "string"
+        nonce:
+          type: "string"
+          description: "Exact nonce for Apple request; do not hash again."
+        expires_in:
+          type: "integer"
+          enum: [300]
+      required: ["challenge_id", "nonce", "expires_in"]
+    NativeCodeSent:
+      type: "object"
+      properties:
+        retry_after:
+          type: "integer"
+          enum: [60]
+        expires_in:
+          type: "integer"
+          enum: [300]
+      required: ["retry_after", "expires_in"]
+    NativeEmpty:
+      type: "object"
+      additionalProperties: false
+    NativeCapabilitiesResponse:
+      type: "object"
+      properties:
+        code:
+          type: "integer"
+          enum: [0]
+        message:
+          type: "string"
+        data:
+          $ref: "#/components/schemas/NativeCapabilities"
+      required: ["code", "message", "data"]
+    NativeChallengeResponse:
+      type: "object"
+      properties:
+        code:
+          type: "integer"
+          enum: [0]
+        message:
+          type: "string"
+        data:
+          $ref: "#/components/schemas/NativeChallenge"
+      required: ["code", "message", "data"]
+    NativeLoginResultResponse:
+      type: "object"
+      properties:
+        code:
+          type: "integer"
+          enum: [0]
+        message:
+          type: "string"
+        data:
+          $ref: "#/components/schemas/NativeLoginResult"
+      required: ["code", "message", "data"]
+    NativeCodeSentResponse:
+      type: "object"
+      properties:
+        code:
+          type: "integer"
+          enum: [0]
+        message:
+          type: "string"
+        data:
+          $ref: "#/components/schemas/NativeCodeSent"
+      required: ["code", "message", "data"]
+    NativeEmptyResponse:
+      type: "object"
+      properties:
+        code:
+          type: "integer"
+          enum: [0]
+        message:
+          type: "string"
+        data:
+          $ref: "#/components/schemas/NativeEmpty"
+      required: ["code", "message", "data"]
+    NativeUserResponse:
+      type: "object"
+      properties:
+        code:
+          type: "integer"
+          enum: [0]
+        message:
+          type: "string"
+        data:
+          $ref: "#/components/schemas/NativeUser"
+      required: ["code", "message", "data"]
     GoldInstrument:
       type: object
       required: [id, name, symbol, kind, currency, unit, quote_source, daily_source, delay_seconds]
