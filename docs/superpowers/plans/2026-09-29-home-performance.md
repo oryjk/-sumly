@@ -11,3 +11,5 @@ Validation: all 99 simulator tests passed (`sumly_ios/build/home-performance-fin
 Independent review caught a fallback-daily observation dependency and a same-current-offset timezone cache collision; fixed using observable revision and timezone identity in the key.
 
 Release target: 0.1.1 (7). Backend unchanged; no deployment/migration needed for this client calculation fix.
+
+Release completed: implementation commit `037b1b2` pushed to origin/main. Archive succeeded for 0.1.1 (7), com.oryjk.sumly. App Store Connect upload succeeded at 2026-09-29 18:25:06 +0800 (`build/upload-b7.log`, EXPORT SUCCEEDED); package is processing.
