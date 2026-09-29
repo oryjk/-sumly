@@ -16,12 +16,12 @@ struct ChartDateRangeSheet: View {
             Form {
                 Section("精确选择日期") {
                     DatePicker("开始日期", selection: $start,
-                               in: bounds.lowerBound...Calendar.current.date(byAdding: .day, value: -1, to: end)!, displayedComponents: .date)
+                               in: bounds.lowerBound...max(bounds.lowerBound, Calendar.current.date(byAdding: .day, value: -1, to: end)!), displayedComponents: .date)
                     DatePicker("结束日期", selection: $end,
-                               in: Calendar.current.date(byAdding: .day, value: 1, to: start)!...bounds.upperBound, displayedComponents: .date)
+                               in: min(bounds.upperBound, Calendar.current.date(byAdding: .day, value: 1, to: start)!)...bounds.upperBound, displayedComponents: .date)
                 }
                 Section {
-                    Text("非实时走势截至昨天。休市日不补点，1900–2015 年保留年度数据。")
+                    Text("仅可选择当前区间内的日期，非实时走势截至昨天。休市日不补点，1900–2015 年保留年度数据。")
                         .font(.footnote).foregroundStyle(GoldTheme.textSecondary)
                 }
             }

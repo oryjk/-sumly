@@ -194,7 +194,7 @@ private actor AdvancingRealtimeFixture: GoldRealtimeServicing {
     #expect(model.visiblePoints.contains { model.xDomain.contains($0.date) })
 }
 
-@MainActor @Test func nonRealtimeChartUsesDayAlignedDatesAndCanLeavePreset() async {
+@MainActor @Test func nonRealtimeChartUsesDayAlignedDatesAndCannotLeavePreset() async {
     let service = HomeMarketFixture()
     let model = MarketHomeViewModel(dailyService: service, quoteService: service, realtimeService: service, historyService: HomeHistoryFixture())
     model.range = .month
@@ -204,7 +204,7 @@ private actor AdvancingRealtimeFixture: GoldRealtimeServicing {
     model.beginNavigatorGesture()
     model.moveNavigator(part: .window, fraction: -0.5)
     model.endChartGesture()
-    #expect(model.xDomain.upperBound < preset.lowerBound)
+    #expect(model.xDomain == preset)
     #expect(Calendar.current.dateComponents([.day], from: model.xDomain.lowerBound, to: model.xDomain.upperBound).day == Calendar.current.dateComponents([.day], from: preset.lowerBound, to: preset.upperBound).day)
     model.resetViewport()
     #expect(model.xDomain == preset)
@@ -318,4 +318,49 @@ private actor MutableHomeHistoryFixture: GoldHistoryServicing, GoldQuoteServicin
     #expect(model.points.isEmpty)
     await model.refresh()
     #expect(abs(model.points[0].price - 2200 * 8 / 31.1034768) < 0.000001)
+}
+
+@Test func calendarRangesRespectYesterdayLeapYearsAndYearStart() {
+    let now = GoldDailyPrice.parseDay("2024-03-01")!
+    #expect(MarketRange.year.dateBounds(now: now)?.lowerBound == GoldDailyPrice.parseDay("2023-02-28"))
+    #expect(MarketRange.yearToDate.dateBounds(now: now)?.lowerBound == GoldDailyPrice.parseDay("2024-01-01"))
+    #expect(MarketRange.tenYears.dateBounds(now: now)?.lowerBound == GoldDailyPrice.parseDay("2014-02-28"))
+    #expect(MarketRange.yearToDate.dateBounds(now: GoldDailyPrice.parseDay("2024-01-01")!) == nil)
+}
+
+@MainActor @Test func everyHistoricalRangeClampsAllNavigationAndFiltersData() async {
+    let service = HomeMarketFixture()
+    let model = MarketHomeViewModel(dailyService: service, quoteService: service, realtimeService: service, historyService: LargeHomeHistoryFixture())
+    model.range = .month
+    await model.refresh()
+    for range in MarketRange.allCases where range != .realtime {
+        model.range = range
+        let bounds = model.fullDomain
+        #expect(model.points.allSatisfy { bounds.contains($0.date) })
+        model.accessibleZoom(0.00001)
+        #expect(model.xDomain == bounds)
+        model.accessibleZoom(10)
+        for part in [ChartViewport.Part.window, .start, .end] {
+            for fraction in [-100.0, 100.0] {
+                model.beginNavigatorGesture()
+                model.moveNavigator(part: part, fraction: fraction)
+                model.endChartGesture()
+                #expect(model.xDomain.lowerBound >= bounds.lowerBound)
+                #expect(model.xDomain.upperBound <= bounds.upperBound)
+            }
+        }
+        model.setDateWindow(Date.distantPast...Date.distantFuture)
+        #expect(model.xDomain == bounds)
+        model.priceScale = .logarithmic
+        model.resetViewport()
+        #expect(model.xDomain == bounds)
+        #expect(model.priceScale == .logarithmic)
+    }
+}
+
+@Test func singleDayBoundsCannotExpandOutsideSelectedRange() {
+    let date = GoldDailyPrice.parseDay("2026-01-01")!
+    let bounds = date...date
+    #expect(ChartViewport.dayAligned(bounds, bounds: bounds) == bounds)
+    #expect(ChartViewport.navigate(bounds, part: .end, fraction: 1, bounds: bounds) == bounds)
 }

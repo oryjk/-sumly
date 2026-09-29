@@ -19,7 +19,31 @@ enum MarketRange: String, CaseIterable {
     case realtime = "实时"
     case month = "近一月"
     case quarter = "近三月"
+    case yearToDate = "今年以来"
+    case year = "近一年"
+    case twoYears = "近两年"
+    case threeYears = "近三年"
+    case fiveYears = "近五年"
+    case tenYears = "近十年"
     case history = "1900年至今"
+
+    func dateBounds(now: Date = .now, calendar: Calendar = Calendar(identifier: .gregorian)) -> ClosedRange<Date>? {
+        let end = ChartViewport.noon(calendar.date(byAdding: .day, value: -1, to: now)!, calendar: calendar)
+        let start: Date
+        switch self {
+        case .realtime: return nil
+        case .month, .quarter:
+            start = calendar.date(byAdding: .month, value: self == .month ? -1 : -3, to: end)!
+        case .yearToDate:
+            start = calendar.date(from: DateComponents(year: calendar.component(.year, from: now), month: 1, day: 1, hour: 12))!
+        case .year, .twoYears, .threeYears, .fiveYears, .tenYears:
+            let years = self == .year ? 1 : self == .twoYears ? 2 : self == .threeYears ? 3 : self == .fiveYears ? 5 : 10
+            start = calendar.date(byAdding: .year, value: -years, to: end)!
+        case .history:
+            start = calendar.date(from: DateComponents(year: 1900, month: 1, day: 1, hour: 12))!
+        }
+        return start <= end ? start...end : nil
+    }
 }
 
 @MainActor @Observable
@@ -54,6 +78,9 @@ final class MarketHomeViewModel {
     private var historyRevision: UInt = 0
     @ObservationIgnored private var preparedKey: HistoricalPointsKey?
     @ObservationIgnored private var preparedPoints: [MarketChartPoint] = []
+    @ObservationIgnored private var scopedKey: HistoricalPointsKey?
+    @ObservationIgnored private var scopedRange: MarketRange?
+    @ObservationIgnored private var scopedPoints: [MarketChartPoint] = []
     private struct HistoricalPointsKey: Equatable {
         let revision: UInt
         let fx: Double
@@ -83,7 +110,7 @@ final class MarketHomeViewModel {
         let lastDay = ChartViewport.noon(Calendar.current.date(byAdding: .day, value: -1, to: .now)!)
         if history.isEmpty && range == .history { return [] }
         let key = HistoricalPointsKey(revision: historyRevision, fx: quote.usdCNY, lastDay: lastDay, timeZone: .current)
-        if preparedKey == key { return preparedPoints }
+        if preparedKey == key { return pointsInSelectedRange(key: key) }
         let source = history.isEmpty
             ? daily.map { MarketChartPoint(date: $0.date, price: $0.close, granularity: .daily) }
             : history.map { MarketChartPoint(date: $0.date, price: $0.price, granularity: $0.granularity) }
@@ -94,7 +121,17 @@ final class MarketHomeViewModel {
             return MarketChartPoint(date: date, price: price, granularity: point.granularity)
         }.sorted { $0.date < $1.date }
         preparedKey = key
-        return preparedPoints
+        return pointsInSelectedRange(key: key)
+    }
+
+    private func pointsInSelectedRange(key: HistoricalPointsKey) -> [MarketChartPoint] {
+        if scopedKey == key && scopedRange == range { return scopedPoints }
+        if let bounds = range.dateBounds() {
+            scopedPoints = preparedPoints.filter { bounds.contains($0.date) }
+        } else { scopedPoints = [] }
+        scopedKey = key
+        scopedRange = range
+        return scopedPoints
     }
 
     var showsInitialLoading: Bool { loading && price == nil && points.isEmpty }
@@ -171,16 +208,13 @@ final class MarketHomeViewModel {
             let start = values.first?.date ?? end.addingTimeInterval(-1200)
             return start...max(end, start.addingTimeInterval(1))
         }
-        let end = ChartViewport.noon(Calendar.current.date(byAdding: .day, value: -1, to: .now)!)
-        let start = history.isEmpty ? (values.first?.date ?? Calendar.current.date(byAdding: .day, value: -1, to: end)!) : GoldDailyPrice.parseDay("1900-01-01")!
-        return min(start, Calendar.current.date(byAdding: .day, value: -1, to: end)!)...end
+        // The selected range is the hard boundary, including navigator and date picker.
+        // No completed YTD day exists on January 1. The UI shows an empty state;
+        // its inert geometry stays inside this year, never in the previous year.
+        let today = ChartViewport.noon(.now)
+        return range.dateBounds() ?? today...today
     }
-    var presetDomain: ClosedRange<Date> {
-        let bounds = fullDomain
-        guard range == .month || range == .quarter else { return bounds }
-        let start = Calendar.current.date(byAdding: .month, value: range == .month ? -1 : -3, to: bounds.upperBound)!
-        return ChartViewport.dayAligned(start...bounds.upperBound, bounds: bounds)
-    }
+    var presetDomain: ClosedRange<Date> { fullDomain }
     var xDomain: ClosedRange<Date> {
         guard let viewport else { return presetDomain }
         let bounds = fullDomain
@@ -258,6 +292,7 @@ final class MarketHomeViewModel {
     func clearMarketCache() {
         cacheGeneration &+= 1
         preparedKey = nil; preparedPoints = []
+        scopedKey = nil; scopedRange = nil; scopedPoints = []
         daily = []; history = []; realtime = []; quote = nil; selectedDate = nil
         resetViewport()
     }

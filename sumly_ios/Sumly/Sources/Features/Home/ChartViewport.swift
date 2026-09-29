@@ -35,6 +35,7 @@ extension ChartViewport {
                            minimumDays: Int = 1, calendar: Calendar = Calendar(identifier: .gregorian)) -> ClosedRange<Date> {
         let base = noon(bounds.lowerBound, calendar: calendar)
         let last = noon(bounds.upperBound, calendar: calendar)
+        guard last > base else { return bounds }
         let total = max(1, calendar.dateComponents([.day], from: base, to: last).day ?? 1)
         let rawStart = calendar.dateComponents([.day], from: base, to: noon(window.lowerBound, calendar: calendar)).day ?? 0
         let rawEnd = calendar.dateComponents([.day], from: base, to: noon(window.upperBound, calendar: calendar)).day ?? total
@@ -45,6 +46,7 @@ extension ChartViewport {
     static func navigate(_ window: ClosedRange<Date>, part: Part, fraction: Double,
                          bounds: ClosedRange<Date>, daily: Bool = true) -> ClosedRange<Date> {
         guard fraction.isFinite else { return window }
+        guard bounds.upperBound > bounds.lowerBound else { return bounds }
         let delta = fraction * bounds.upperBound.timeIntervalSince(bounds.lowerBound)
         let minimum: TimeInterval = min(bounds.upperBound.timeIntervalSince(bounds.lowerBound), daily ? 86400 : 30)
         let moved: ClosedRange<Date>

@@ -74,17 +74,28 @@ struct HomeView: View {
                     }.padding(.top, 10)
 
                     VStack(spacing: 14) {
-                        HStack(spacing: 6) {
-                            ForEach(MarketRange.allCases, id: \.self) { range in
-                                Button { model.range = range } label: {
-                                    Text(range.rawValue).font(.system(size: 13, weight: .medium))
-                                        .frame(maxWidth: .infinity, minHeight: 44)
-                                        .foregroundStyle(model.range == range ? GoldTheme.onGold : GoldTheme.textSecondary)
-                                        .background(model.range == range ? GoldTheme.gold : GoldTheme.card, in: GoldTheme.rangeShape)
-                                }.buttonStyle(.plain)
-                                    .accessibilityAddTraits(model.range == range ? .isSelected : [])
+                        Menu {
+                            Picker("时间区间", selection: $model.range) {
+                                ForEach(MarketRange.allCases, id: \.self) { range in
+                                    Text(range.rawValue).tag(range)
+                                }
                             }
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "calendar")
+                                Text("时间区间").foregroundStyle(GoldTheme.textSecondary)
+                                Spacer()
+                                Text(model.range.rawValue).fontWeight(.semibold)
+                                Image(systemName: "chevron.down").font(.caption.weight(.bold))
+                            }
+                            .font(.subheadline).foregroundStyle(GoldTheme.gold)
+                            .padding(.horizontal, 14).frame(minHeight: 48)
+                            .background(GoldTheme.card, in: GoldTheme.rangeShape)
+                            .overlay(GoldTheme.rangeShape.strokeBorder(GoldTheme.gold.opacity(0.5)))
                         }
+                        .accessibilityLabel("时间区间")
+                        .accessibilityValue(model.range.rawValue)
+                        .accessibilityIdentifier("chart.range")
                         HStack(spacing: 12) {
                             HStack(spacing: 2) {
                                 ForEach(ChartPriceScale.allCases, id: \.self) { scale in
@@ -116,38 +127,44 @@ struct HomeView: View {
                             }.accessibilityLabel("历史数据说明")
                         }.font(.system(size: 11)).foregroundStyle(GoldTheme.textSecondary)
 
-                        trendChart
-                            .frame(height: max(200, min(280, geometry.size.height * 0.30)))
-                            .accessibilityLabel("\(model.range.rawValue)黄金价格走势图，当前区间\(model.windowPoints.count)个行情点")
+                        if model.range == .realtime || model.range.dateBounds() != nil {
+                            trendChart
+                                .frame(height: max(200, min(280, geometry.size.height * 0.30)))
+                                .accessibilityLabel("\(model.range.rawValue)黄金价格走势图，当前区间\(model.windowPoints.count)个行情点")
 
-                        VStack(spacing: 10) {
-                            HStack(alignment: .center) {
-                                if model.range == .realtime {
-                                    Text(windowLabel).font(.caption.monospacedDigit()).foregroundStyle(GoldTheme.text)
-                                } else {
-                                    Button { showingDates = true } label: {
-                                        HStack(spacing: 6) {
-                                            Image(systemName: "calendar")
-                                            Text(windowLabel).monospacedDigit()
-                                            Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
-                                        }.font(.system(size: 12, weight: .medium)).foregroundStyle(GoldTheme.goldSoft)
-                                            .frame(minHeight: 44)
-                                    }.accessibilityIdentifier("chart.dates")
+                            VStack(spacing: 10) {
+                                HStack(alignment: .center) {
+                                    if model.range == .realtime {
+                                        Text(windowLabel).font(.caption.monospacedDigit()).foregroundStyle(GoldTheme.text)
+                                    } else {
+                                        Button { showingDates = true } label: {
+                                            HStack(spacing: 6) {
+                                                Image(systemName: "calendar")
+                                                Text(windowLabel).monospacedDigit()
+                                                Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
+                                            }.font(.system(size: 12, weight: .medium)).foregroundStyle(GoldTheme.goldSoft)
+                                                .frame(minHeight: 44)
+                                        }.accessibilityIdentifier("chart.dates")
+                                    }
+                                    Spacer(minLength: 2)
+                                    Text("\(model.windowPoints.count) 个点").font(.caption).foregroundStyle(GoldTheme.textSecondary)
                                 }
-                                Spacer(minLength: 2)
-                                Text("\(model.windowPoints.count) 个点").font(.caption).foregroundStyle(GoldTheme.textSecondary)
+                                ChartRangeNavigator(points: model.points, bounds: model.fullDomain, window: model.xDomain,
+                                                    scale: model.priceScale, daily: model.range != .realtime,
+                                                    begin: model.beginNavigatorGesture, move: model.moveNavigator, end: model.endChartGesture)
+                                    .disabled(model.points.isEmpty)
+                                HStack {
+                                    Text(overviewLabel(model.fullDomain.lowerBound))
+                                    Spacer()
+                                    Text(overviewLabel(model.fullDomain.upperBound))
+                                }.font(.system(size: 10)).foregroundStyle(GoldTheme.textFaint)
+                                Text("区间内拖动浏览 · 两端缩放 · 主图单指查价")
+                                    .font(.system(size: 11)).foregroundStyle(GoldTheme.textSecondary)
                             }
-                            ChartRangeNavigator(points: model.points, bounds: model.fullDomain, window: model.xDomain,
-                                                scale: model.priceScale, daily: model.range != .realtime,
-                                                begin: model.beginNavigatorGesture, move: model.moveNavigator, end: model.endChartGesture)
-                                .disabled(model.points.isEmpty)
-                            HStack {
-                                Text(overviewLabel(model.fullDomain.lowerBound))
-                                Spacer()
-                                Text(overviewLabel(model.fullDomain.upperBound))
-                            }.font(.system(size: 10)).foregroundStyle(GoldTheme.textFaint)
-                            Text("拖动选框浏览 · 拖动两端缩放 · 主图单指查价")
-                                .font(.system(size: 11)).foregroundStyle(GoldTheme.textSecondary)
+                        } else {
+                            Text("今年暂无已收盘数据，首个交易日收盘后更新")
+                                .font(.subheadline).foregroundStyle(GoldTheme.textSecondary)
+                                .frame(maxWidth: .infinity, minHeight: 280)
                         }
                     }
                 }.padding(.horizontal, 18).padding(.bottom, 110)
