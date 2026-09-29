@@ -258,3 +258,64 @@ private struct YesterdayOnlyFixture: GoldPriceServicing {
     #expect(model.fullDomain.lowerBound < yesterday)
     #expect(model.xDomain.upperBound == yesterday)
 }
+
+private struct LargeHomeHistoryFixture: GoldHistoryServicing {
+    func fetchHistory() async throws -> [GoldHistoryPoint] {
+        let end = ChartViewport.noon(.now)
+        return (1...5308).map { day in
+            GoldHistoryPoint(date: end.addingTimeInterval(Double(-day) * 86400), price: Double(2000 + day % 100), granularity: .daily, source: "fixture")
+        }
+    }
+}
+
+@MainActor @Test func historicalViewportReadsStayWithinInteractionBudget() async {
+    let service = HomeMarketFixture()
+    let model = MarketHomeViewModel(dailyService: service, quoteService: service, realtimeService: service, historyService: LargeHomeHistoryFixture())
+    model.range = .month
+    await model.refresh()
+    let start = ContinuousClock.now
+    var count = 0
+    // Repeated SwiftUI body, axis and navigator reads while switching/panning.
+    for _ in 0..<20 {
+        count += model.visiblePoints.count + model.windowPoints.count + model.axisDates.count
+        _ = model.fullDomain
+        _ = model.canReset
+    }
+    let elapsed = start.duration(to: .now)
+    print("HOME_PERF repeated viewport reads: \(elapsed)")
+    #expect(count > 0)
+    #expect(elapsed < .milliseconds(500))
+}
+
+private actor MutableHomeHistoryFixture: GoldHistoryServicing, GoldQuoteServicing {
+    let date = ChartViewport.noon(Date.now.addingTimeInterval(-86400))
+    var value = 2000.0
+    var fx = 7.0
+    func change(value: Double, fx: Double) { self.value = value; self.fx = fx }
+    func fetchHistory() async throws -> [GoldHistoryPoint] {
+        [GoldHistoryPoint(date: date, price: value, granularity: .daily, source: "fixture")]
+    }
+    func fetchQuote() async throws -> GoldQuote {
+        GoldQuote(symbol: "XAUUSD", price: value, open: value, high: value, low: value,
+                  prevClose: value, usdCNY: fx, cnyPerGram: value * fx / 31.1034768, asOf: .now)
+    }
+}
+
+@MainActor @Test func preparedHistoryReflectsCorrectionsFXAndCacheClear() async {
+    let daily = HomeMarketFixture()
+    let history = MutableHomeHistoryFixture()
+    let model = MarketHomeViewModel(dailyService: daily, quoteService: history, realtimeService: daily, historyService: history)
+    model.range = .month
+    await model.refresh()
+    #expect(abs(model.points[0].price - 2000 * 7 / 31.1034768) < 0.000001)
+    await history.change(value: 2200, fx: 7)
+    await model.refresh()
+    #expect(abs(model.points[0].price - 2200 * 7 / 31.1034768) < 0.000001)
+    await history.change(value: 2200, fx: 8)
+    await model.refresh()
+    #expect(abs(model.points[0].price - 2200 * 8 / 31.1034768) < 0.000001)
+    model.clearMarketCache()
+    #expect(model.points.isEmpty)
+    await model.refresh()
+    #expect(abs(model.points[0].price - 2200 * 8 / 31.1034768) < 0.000001)
+}

@@ -30,12 +30,16 @@ final class MarketHomeViewModel {
     private var cacheGeneration: UInt = 0
     private(set) var viewport: ClosedRange<Date>?
     private var gestureViewport: ClosedRange<Date>?
-    private(set) var history: [GoldHistoryPoint] = []
+    private(set) var history: [GoldHistoryPoint] = [] {
+        didSet { if history != oldValue { historyRevision &+= 1 } }
+    }
     private var historyFailed = false
     private(set) var historyLoading = false
     private let historyService: any GoldHistoryServicing
     private(set) var quote: GoldQuote?
-    private(set) var daily: [GoldDailyPrice] = []
+    private(set) var daily: [GoldDailyPrice] = [] {
+        didSet { if daily != oldValue { historyRevision &+= 1 } }
+    }
     private(set) var realtime: [MarketChartPoint] = []
     private(set) var loading = true
     private var quoteFailed = false
@@ -44,6 +48,18 @@ final class MarketHomeViewModel {
     private let dailyService: any GoldPriceServicing
     private let quoteService: any GoldQuoteServicing
     private let realtimeService: any GoldRealtimeServicing
+
+    // Derived data is not observable state: filling this cache during a view read
+    // must not schedule another SwiftUI render. Source properties remain observed.
+    private var historyRevision: UInt = 0
+    @ObservationIgnored private var preparedKey: HistoricalPointsKey?
+    @ObservationIgnored private var preparedPoints: [MarketChartPoint] = []
+    private struct HistoricalPointsKey: Equatable {
+        let revision: UInt
+        let fx: Double
+        let lastDay: Date
+        let timeZone: TimeZone
+    }
 
     init(dailyService: any GoldPriceServicing = BackendGoldPriceService(),
          quoteService: any GoldQuoteServicing = BackendGoldPriceService(),
@@ -65,20 +81,20 @@ final class MarketHomeViewModel {
         guard let quote, quote.usdCNY.isFinite, quote.usdCNY > 0 else { return [] }
         let factor = quote.usdCNY / 31.1034768
         let lastDay = ChartViewport.noon(Calendar.current.date(byAdding: .day, value: -1, to: .now)!)
-        var result: [MarketChartPoint]
-        if !history.isEmpty {
-            result = history.filter { ChartViewport.noon($0.date) <= lastDay }.map {
-                MarketChartPoint(date: ChartViewport.noon($0.date), price: $0.price * factor, granularity: $0.granularity)
-            }
-        } else {
-            if range == .history { return [] }
-            result = daily.filter { ChartViewport.noon($0.date) <= lastDay }.map {
-                MarketChartPoint(date: ChartViewport.noon($0.date), price: $0.close * factor, granularity: .daily)
-            }
-        }
-        guard !result.isEmpty else { return [] }
-        result = result.filter { $0.price.isFinite && $0.price > 0 }.sorted { $0.date < $1.date }
-        return result
+        if history.isEmpty && range == .history { return [] }
+        let key = HistoricalPointsKey(revision: historyRevision, fx: quote.usdCNY, lastDay: lastDay, timeZone: .current)
+        if preparedKey == key { return preparedPoints }
+        let source = history.isEmpty
+            ? daily.map { MarketChartPoint(date: $0.date, price: $0.close, granularity: .daily) }
+            : history.map { MarketChartPoint(date: $0.date, price: $0.price, granularity: $0.granularity) }
+        preparedPoints = source.compactMap { point in
+            let date = ChartViewport.noon(point.date)
+            let price = point.price * factor
+            guard date <= lastDay, price.isFinite, price > 0 else { return nil }
+            return MarketChartPoint(date: date, price: price, granularity: point.granularity)
+        }.sorted { $0.date < $1.date }
+        preparedKey = key
+        return preparedPoints
     }
 
     var showsInitialLoading: Bool { loading && price == nil && points.isEmpty }
@@ -241,6 +257,7 @@ final class MarketHomeViewModel {
 
     func clearMarketCache() {
         cacheGeneration &+= 1
+        preparedKey = nil; preparedPoints = []
         daily = []; history = []; realtime = []; quote = nil; selectedDate = nil
         resetViewport()
     }
