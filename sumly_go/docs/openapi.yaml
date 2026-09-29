@@ -51,6 +51,58 @@ x-native-errors: &nativeErrors
           $ref: "#/components/schemas/ErrorResponse"
 
 paths:
+  /api/v1/app/market/gold/sync:
+    get:
+      tags: [App Market]
+      summary: 增量同步已收盘历史价格
+      description: |
+        首次省略 cursor，返回完整快照；以后原样提交 cursor，只返回新增、修正或删除的记录。
+        reset=true 时替换本地快照，否则按 granularity/date 合并；deleted=true 删除对应记录。
+        游标绑定数据库 epoch 和品种，失效时自动返回完整快照。数据与游标须一起原子保存。
+        年度记录只用于 xauusd，范围 1900–2015；日线保留来源提供的交易日，不含当天未收盘报价。
+      parameters:
+        - in: query
+          name: series
+          schema: {type: string, enum: [xauusd, au9999, comex-gold], default: xauusd}
+        - in: query
+          name: cursor
+          schema: {type: string, maxLength: 160}
+      responses:
+        "200":
+          description: 完整快照或增量（points 可以为空）
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code, message, data]
+                properties:
+                  code: {type: integer, example: 0}
+                  message: {type: string}
+                  data:
+                    type: object
+                    required: [series, unit, cursor, reset, points]
+                    properties:
+                      series: {type: string}
+                      unit: {type: string, enum: [USD/troy_oz, CNY/g]}
+                      cursor: {type: string}
+                      reset: {type: boolean}
+                      points:
+                        type: array
+                        items:
+                          type: object
+                          required: [date, granularity, open, high, low, close, source, deleted]
+                          properties:
+                            date: {type: string, format: date}
+                            granularity: {type: string, enum: [annual, daily]}
+                            open: {type: number}
+                            high: {type: number}
+                            low: {type: number}
+                            close: {type: number}
+                            source: {type: string}
+                            deleted: {type: boolean}
+        "400":
+          description: 不支持的品种或游标过长
+
   /api/v1/app/market/gold/history:
     get:
       tags: ["App Market"]

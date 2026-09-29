@@ -42,6 +42,7 @@ type Dependencies struct {
 	AppUsers        *userhttp.AppHandler
 	ActiveUsers     authhttp.ActiveUserChecker
 	GoldMarket      *markethttp.Handler
+	GoldSync        *markethttp.SyncHandler
 	GoldHistory     *markethttp.HistoryHandler
 }
 
@@ -93,7 +94,12 @@ func BuildDependencies(ctx context.Context, config Config) (Dependencies, func()
 		closePool()
 		return Dependencies{}, nil, err
 	}
-	historyHandler := markethttp.NewHistoryHandler(marketapplication.NewGoldHistory(goldMarketService, annual))
+	historyStore := marketpostgres.NewRepository(pool)
+	if err := historyStore.SeedAnnual(ctx, annual); err != nil {
+		closePool()
+		return Dependencies{}, nil, fmt.Errorf("seed annual history: %w", err)
+	}
+	historyHandler := markethttp.NewHistoryHandler(marketapplication.NewStoredGoldHistory(goldMarketService, historyStore))
 
 	domesticQuote := sina.NewInstrumentClient(sinaClient, "gds_AU9999", "AU9999", "CNY")
 	londonSource := sina.NewInstrumentClient(sinaClient, "hf_XAU", "XAUUSD", "USD")
@@ -154,6 +160,7 @@ func BuildDependencies(ctx context.Context, config Config) (Dependencies, func()
 		AppUsers:        appUserHandler,
 		ActiveUsers:     appUserService,
 		GoldMarket:      goldMarketHandler,
+		GoldSync:        markethttp.NewSyncHandler(historyStore),
 		GoldHistory:     historyHandler,
 	}, closeAll, nil
 }

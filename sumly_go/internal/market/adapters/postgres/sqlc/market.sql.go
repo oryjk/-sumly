@@ -11,6 +11,119 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const claimHistorySeed = `-- name: ClaimHistorySeed :one
+INSERT INTO market_history_seeds(name) VALUES($1) ON CONFLICT DO NOTHING RETURNING name
+`
+
+func (q *Queries) ClaimHistorySeed(ctx context.Context, name string) (string, error) {
+	row := q.db.QueryRow(ctx, claimHistorySeed, name)
+	var name_2 string
+	err := row.Scan(&name_2)
+	return name_2, err
+}
+
+const finishDailySync = `-- name: FinishDailySync :exec
+UPDATE market_daily_jobs SET completed_day=CASE WHEN $2::boolean THEN $3::date ELSE completed_day END
+WHERE symbol=$1
+`
+
+type FinishDailySyncParams struct {
+	Symbol  string
+	Success bool
+	Day     pgtype.Date
+}
+
+func (q *Queries) FinishDailySync(ctx context.Context, arg FinishDailySyncParams) error {
+	_, err := q.db.Exec(ctx, finishDailySync, arg.Symbol, arg.Success, arg.Day)
+	return err
+}
+
+const historyClock = `-- name: HistoryClock :one
+SELECT epoch::text, revision FROM market_history_clock WHERE id
+`
+
+type HistoryClockRow struct {
+	Epoch    string
+	Revision int64
+}
+
+func (q *Queries) HistoryClock(ctx context.Context) (HistoryClockRow, error) {
+	row := q.db.QueryRow(ctx, historyClock)
+	var i HistoryClockRow
+	err := row.Scan(&i.Epoch, &i.Revision)
+	return i, err
+}
+
+const historyDelta = `-- name: HistoryDelta :many
+SELECT symbol, trading_date, granularity, open, high, low, close, source, deleted, revision FROM market_history_points WHERE symbol=$1 AND revision > $2 ORDER BY trading_date,granularity
+`
+
+type HistoryDeltaParams struct {
+	Symbol   string
+	Revision int64
+}
+
+func (q *Queries) HistoryDelta(ctx context.Context, arg HistoryDeltaParams) ([]MarketHistoryPoint, error) {
+	rows, err := q.db.Query(ctx, historyDelta, arg.Symbol, arg.Revision)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MarketHistoryPoint
+	for rows.Next() {
+		var i MarketHistoryPoint
+		if err := rows.Scan(
+			&i.Symbol,
+			&i.TradingDate,
+			&i.Granularity,
+			&i.Open,
+			&i.High,
+			&i.Low,
+			&i.Close,
+			&i.Source,
+			&i.Deleted,
+			&i.Revision,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const loadAnnualHistory = `-- name: LoadAnnualHistory :many
+SELECT trading_date,close,source FROM market_history_points WHERE symbol='XAUUSD' AND granularity='annual' AND NOT deleted ORDER BY trading_date
+`
+
+type LoadAnnualHistoryRow struct {
+	TradingDate pgtype.Date
+	Close       float64
+	Source      string
+}
+
+func (q *Queries) LoadAnnualHistory(ctx context.Context) ([]LoadAnnualHistoryRow, error) {
+	rows, err := q.db.Query(ctx, loadAnnualHistory)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LoadAnnualHistoryRow
+	for rows.Next() {
+		var i LoadAnnualHistoryRow
+		if err := rows.Scan(&i.TradingDate, &i.Close, &i.Source); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const loadDaily = `-- name: LoadDaily :many
 SELECT trading_date, open, high, low, close FROM gold_daily_bars
 WHERE symbol=$1 ORDER BY trading_date
@@ -141,6 +254,7 @@ ON CONFLICT (symbol, trading_date) DO UPDATE SET open=EXCLUDED.open, high=EXCLUD
  low=EXCLUDED.low, close=EXCLUDED.close, updated_at=NOW()
 WHERE (gold_daily_bars.open,gold_daily_bars.high,gold_daily_bars.low,gold_daily_bars.close)
  IS DISTINCT FROM (EXCLUDED.open,EXCLUDED.high,EXCLUDED.low,EXCLUDED.close)
+ OR NOT EXISTS (SELECT 1 FROM market_history_points p WHERE p.symbol=EXCLUDED.symbol AND p.trading_date=EXCLUDED.trading_date AND p.granularity='daily' AND NOT p.deleted)
 `
 
 type SaveDailyParams struct {
@@ -213,4 +327,42 @@ func (q *Queries) SaveRealtime(ctx context.Context, arg SaveRealtimeParams) erro
 		arg.PriceCny,
 	)
 	return err
+}
+
+const seedAnnualHistory = `-- name: SeedAnnualHistory :exec
+INSERT INTO market_history_points(symbol,trading_date,granularity,open,high,low,close,source)
+SELECT 'XAUUSD',unnest($1::date[]),'annual',unnest($2::float8[]),
+ unnest($2::float8[]),unnest($2::float8[]),unnest($2::float8[]),'usgs-ds140'
+ON CONFLICT DO NOTHING
+`
+
+type SeedAnnualHistoryParams struct {
+	Dates  []pgtype.Date
+	Prices []float64
+}
+
+func (q *Queries) SeedAnnualHistory(ctx context.Context, arg SeedAnnualHistoryParams) error {
+	_, err := q.db.Exec(ctx, seedAnnualHistory, arg.Dates, arg.Prices)
+	return err
+}
+
+const tryDailySync = `-- name: TryDailySync :one
+INSERT INTO market_daily_jobs(symbol,retry_at) VALUES($1,$2::timestamptz + INTERVAL '15 minutes')
+ON CONFLICT(symbol) DO UPDATE SET retry_at=EXCLUDED.retry_at
+WHERE (market_daily_jobs.completed_day IS NULL OR market_daily_jobs.completed_day < $3::date)
+ AND market_daily_jobs.retry_at <= $2::timestamptz
+RETURNING symbol
+`
+
+type TryDailySyncParams struct {
+	Symbol string
+	NowAt  pgtype.Timestamptz
+	Day    pgtype.Date
+}
+
+func (q *Queries) TryDailySync(ctx context.Context, arg TryDailySyncParams) (string, error) {
+	row := q.db.QueryRow(ctx, tryDailySync, arg.Symbol, arg.NowAt, arg.Day)
+	var symbol string
+	err := row.Scan(&symbol)
+	return symbol, err
 }

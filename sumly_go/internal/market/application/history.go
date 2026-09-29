@@ -39,7 +39,7 @@ func (s *GoldMarketService) CollectDaily(ctx context.Context) {
 	refresh := func() {
 		requestCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
-		if _, err := s.GetGoldDailyKLines(requestCtx); err != nil && ctx.Err() == nil {
+		if err := s.SyncDaily(requestCtx); err != nil && ctx.Err() == nil {
 			slog.Error("collect gold daily failed", "error", err)
 		}
 	}

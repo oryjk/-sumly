@@ -16,6 +16,7 @@ struct HomeView: View {
                 dashboard
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .marketCacheCleared)) { _ in model.clearMarketCache() }
         .task(id: scenePhase) {
             if scenePhase == .active { await model.start() }
         }
@@ -113,6 +114,13 @@ struct HomeView: View {
 
                 HStack(spacing: 12) {
                     Text("双指缩放 / 移动 · 单指查价")
+                    Button {
+                        model.priceScale = model.priceScale == .linear ? .logarithmic : .linear
+                    } label: {
+                        Text(model.priceScale.rawValue).foregroundStyle(GoldTheme.gold)
+                    }
+                    .accessibilityLabel("纵轴：" + model.priceScale.rawValue + "，点击切换")
+                    .accessibilityIdentifier("chart.priceScale")
                     if model.viewport != nil { Button("复位") { model.resetViewport() } }
                     if model.range == .history { Button("数据说明") { showingHistorySources = true } }
                 }
@@ -131,24 +139,24 @@ struct HomeView: View {
 
     private var trendChart: some View {
         let data = model.visiblePoints
-        let domain = MarketHomeViewModel.chartDomain(data)
+        let domain = model.priceScale.domain(data.map(\.price))
         let baseline = domain.lowerBound
         return ZStack {
             Chart {
                 ForEach(data, id: \.date) { point in
                     AreaMark(x: .value("时间", point.date),
                              yStart: .value("基线", baseline),
-                             yEnd: .value("元/克", point.price))
+                             yEnd: .value("价格刻度", model.priceScale.value(point.price) ?? domain.lowerBound))
                         .foregroundStyle(LinearGradient(
                             colors: [GoldTheme.chartFill, GoldTheme.gold.opacity(0)],
                             startPoint: .top, endPoint: .bottom))
                         .interpolationMethod(.monotone)
-                    LineMark(x: .value("时间", point.date), y: .value("元/克", point.price))
+                    LineMark(x: .value("时间", point.date), y: .value("价格刻度", model.priceScale.value(point.price) ?? domain.lowerBound))
                         .foregroundStyle(GoldTheme.gold)
                         .lineStyle(StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
                         .interpolationMethod(.monotone)
                     if data.count == 1 {
-                        PointMark(x: .value("时间", point.date), y: .value("元/克", point.price))
+                        PointMark(x: .value("时间", point.date), y: .value("价格刻度", model.priceScale.value(point.price) ?? domain.lowerBound))
                             .foregroundStyle(GoldTheme.gold)
                     }
                 }
@@ -156,7 +164,7 @@ struct HomeView: View {
                     RuleMark(x: .value("时间", point.date))
                         .foregroundStyle(GoldTheme.gold.opacity(0.6))
                         .lineStyle(StrokeStyle(lineWidth: 0.6))
-                    PointMark(x: .value("时间", point.date), y: .value("元/克", point.price))
+                    PointMark(x: .value("时间", point.date), y: .value("价格刻度", model.priceScale.value(point.price) ?? domain.lowerBound))
                         .foregroundStyle(GoldTheme.gold)
                         .symbolSize(32)
                 }

@@ -1,7 +1,7 @@
 import Foundation
 
 /// 伦敦金实时报价（后端 `/market/gold/quote`），价格单位：美元/盎司。
-struct GoldQuote: Hashable, Sendable {
+struct GoldQuote: Hashable, Sendable, Codable {
     let symbol: String
     let price: Double
     let open: Double

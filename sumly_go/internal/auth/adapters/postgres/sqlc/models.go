@@ -89,6 +89,35 @@ type GoldRealtimeSample struct {
 	PriceCny  float64            `json:"price_cny"`
 }
 
+type MarketDailyJob struct {
+	Symbol       string             `json:"symbol"`
+	CompletedDay pgtype.Date        `json:"completed_day"`
+	RetryAt      pgtype.Timestamptz `json:"retry_at"`
+}
+
+type MarketHistoryClock struct {
+	ID       bool        `json:"id"`
+	Epoch    pgtype.UUID `json:"epoch"`
+	Revision int64       `json:"revision"`
+}
+
+type MarketHistoryPoint struct {
+	Symbol      string      `json:"symbol"`
+	TradingDate pgtype.Date `json:"trading_date"`
+	Granularity string      `json:"granularity"`
+	Open        float64     `json:"open"`
+	High        float64     `json:"high"`
+	Low         float64     `json:"low"`
+	Close       float64     `json:"close"`
+	Source      string      `json:"source"`
+	Deleted     bool        `json:"deleted"`
+	Revision    int64       `json:"revision"`
+}
+
+type MarketHistorySeed struct {
+	Name string `json:"name"`
+}
+
 type User struct {
 	ID          int64            `json:"id"`
 	Openid      string           `json:"openid"`

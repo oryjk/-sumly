@@ -86,6 +86,9 @@ func (s *GoldMarketService) staleQuoteOrFail(err error) (domain.GoldQuote, error
 }
 
 func (s *GoldMarketService) GetGoldDailyKLines(ctx context.Context) ([]domain.DailyBar, error) {
+	if s.store != nil {
+		return s.store.LoadDaily(ctx)
+	}
 	s.dailyFetchMu.Lock()
 	defer s.dailyFetchMu.Unlock()
 	s.mu.Lock()

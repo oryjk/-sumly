@@ -12,6 +12,7 @@ import (
 )
 
 type Repository struct {
+	pool    *pgxpool.Pool
 	queries *marketsqlc.Queries
 	symbol  string
 	native  bool
@@ -20,7 +21,7 @@ type Repository struct {
 var _ ports.GoldHistoryStore = (*Repository)(nil)
 
 func NewRepository(pool *pgxpool.Pool) *Repository {
-	return &Repository{queries: marketsqlc.New(pool), symbol: "XAUUSD"}
+	return &Repository{pool: pool, queries: marketsqlc.New(pool), symbol: "XAUUSD"}
 }
 func timestamp(t time.Time) pgtype.Timestamptz { return pgtype.Timestamptz{Time: t, Valid: true} }
 
@@ -92,5 +93,5 @@ func (r *Repository) LoadDaily(ctx context.Context) ([]domain.DailyBar, error) {
 
 // NewNativeRepository scopes every query to one instrument and keeps its original quote unit.
 func NewNativeRepository(pool *pgxpool.Pool, symbol string) *Repository {
-	return &Repository{queries: marketsqlc.New(pool), symbol: symbol, native: true}
+	return &Repository{pool: pool, queries: marketsqlc.New(pool), symbol: symbol, native: true}
 }

@@ -92,6 +92,9 @@ func TestServiceRestoresDatabaseHistoryWhenUpstreamIsOffline(t *testing.T) {
 	latest.Date = old.Date.AddDate(0, 0, 1)
 	latest.Close = 1515
 	writer := application.NewGoldMarketService(historySource{bars: []domain.DailyBar{latest}}, repo)
+	if err := writer.SyncDaily(ctx); err != nil {
+		t.Fatal(err)
+	}
 	merged, err := writer.GetGoldDailyKLines(ctx)
 	if err != nil || len(merged) != 2 {
 		t.Fatalf("persist and merge: %v %v", merged, err)

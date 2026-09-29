@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"gitee.com/oryjk/sumly/sumly_go/internal/market/domain"
+	"gitee.com/oryjk/sumly/sumly_go/internal/market/ports"
 	"math"
 	"sort"
 	"time"
@@ -12,12 +13,16 @@ type DailyGoldHistory interface {
 	GetGoldDailyKLines(context.Context) ([]domain.DailyBar, error)
 }
 type GoldHistory struct {
-	daily  DailyGoldHistory
-	annual []domain.GoldHistoryPoint
+	daily       DailyGoldHistory
+	annual      []domain.GoldHistoryPoint
+	annualStore ports.AnnualHistoryStore
 }
 
 func NewGoldHistory(daily DailyGoldHistory, annual []domain.GoldHistoryPoint) *GoldHistory {
 	return &GoldHistory{daily: daily, annual: append([]domain.GoldHistoryPoint(nil), annual...)}
+}
+func NewStoredGoldHistory(daily DailyGoldHistory, store ports.AnnualHistoryStore) *GoldHistory {
+	return &GoldHistory{daily: daily, annualStore: store}
 }
 func (s *GoldHistory) GetGoldHistory(ctx context.Context) ([]domain.GoldHistoryPoint, error) {
 	bars, err := s.daily.GetGoldDailyKLines(ctx)
@@ -25,6 +30,12 @@ func (s *GoldHistory) GetGoldHistory(ctx context.Context) ([]domain.GoldHistoryP
 		return nil, err
 	}
 	points := append([]domain.GoldHistoryPoint(nil), s.annual...)
+	if s.annualStore != nil {
+		points, err = s.annualStore.LoadAnnual(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
 	now := time.Now()
 	byDay := map[string]domain.DailyBar{}
 	for _, bar := range bars {

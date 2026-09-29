@@ -26,6 +26,8 @@ enum MarketRange: String, CaseIterable {
 final class MarketHomeViewModel {
     var range: MarketRange = .realtime { didSet { resetViewport() } }
     var selectedDate: Date?
+    var priceScale: ChartPriceScale = .linear
+    private var cacheGeneration: UInt = 0
     private(set) var viewport: ClosedRange<Date>?
     private var gestureViewport: ClosedRange<Date>?
     private(set) var history: [GoldHistoryPoint] = []
@@ -197,20 +199,53 @@ final class MarketHomeViewModel {
         guard !historyLoading else { return }
         historyLoading = true
         defer { historyLoading = false }
-        do { history = try await historyService.fetchHistory(); historyFailed = false }
+        let generation = cacheGeneration
+        if let cached = await historyService.cachedHistory(), generation == cacheGeneration { history = cached }
+        guard generation == cacheGeneration, !Task.isCancelled else { return }
+        do {
+            let fetched = try await historyService.fetchHistory()
+            guard generation == cacheGeneration, !Task.isCancelled else { return }
+            history = fetched; historyFailed = false
+        }
         catch { if !Task.isCancelled { historyFailed = true } }
     }
 
+    func clearMarketCache() {
+        cacheGeneration &+= 1
+        daily = []; history = []; realtime = []; quote = nil; selectedDate = nil
+        resetViewport()
+    }
+
     private func loadQuote() async {
-        do { quote = try await quoteService.fetchQuote(); quoteFailed = false }
+        let generation = cacheGeneration
+        if quote == nil, let cached = await quoteService.cachedQuote(), generation == cacheGeneration { quote = cached }
+        guard generation == cacheGeneration, !Task.isCancelled else { return }
+        do {
+            let fetched = try await quoteService.fetchQuote()
+            guard generation == cacheGeneration, !Task.isCancelled else { return }
+            quote = fetched; quoteFailed = false
+        }
         catch { if !Task.isCancelled { quoteFailed = true } }
     }
     private func loadDaily() async {
-        do { daily = try await dailyService.fetchDailyPrices(); dailyFailed = false }
+        let generation = cacheGeneration
+        if let cached = await dailyService.cachedDailyPrices(), generation == cacheGeneration { daily = cached }
+        guard generation == cacheGeneration, !Task.isCancelled else { return }
+        do {
+            let fetched = try await dailyService.fetchDailyPrices()
+            guard generation == cacheGeneration, !Task.isCancelled else { return }
+            daily = fetched; dailyFailed = false
+        }
         catch { if !Task.isCancelled { dailyFailed = true } }
     }
     private func loadRealtime() async {
-        do { realtime = try await realtimeService.fetchRealtime(); realtimeFailed = false }
+        let generation = cacheGeneration
+        guard generation == cacheGeneration, !Task.isCancelled else { return }
+        do {
+            let fetched = try await realtimeService.fetchRealtime()
+            guard generation == cacheGeneration, !Task.isCancelled else { return }
+            realtime = fetched; realtimeFailed = false
+        }
         catch { if !Task.isCancelled { realtimeFailed = true } }
     }
 }

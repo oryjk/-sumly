@@ -66,9 +66,34 @@ struct BackendGoldPriceService: GoldPriceServicing, GoldQuoteServicing, GoldIntr
 
     // MARK: - GoldPriceServicing
 
+    private var cacheSeries: String { instrumentID ?? "xauusd" }
+    private var cacheScope: String { baseURL.absoluteString }
+    private func synchronizedPoints() async throws -> [MarketSyncPoint] {
+        try await MarketHistoryCache.shared.sync(scope: cacheScope, series: cacheSeries,
+            transport: BackendMarketSyncTransport(baseURL: baseURL, session: session))
+    }
+    private func dailyPoints(_ points: [MarketSyncPoint]) -> [GoldDailyPrice] {
+        points.filter { $0.granularity == .daily }.compactMap {
+            guard let date = GoldDailyPrice.parseDay($0.date) else { return nil }
+            return GoldDailyPrice(date: date, open: $0.open, high: $0.high, low: $0.low, close: $0.close)
+        }
+    }
+    private func historicalPoints(_ points: [MarketSyncPoint]) -> [GoldHistoryPoint] {
+        points.filter { $0.granularity == .annual || $0.date >= "2016-01-01" }.compactMap {
+            guard let date = GoldDailyPrice.parseDay($0.date) else { return nil }
+            return GoldHistoryPoint(date: date, price: $0.close, granularity: $0.granularity, source: $0.source)
+        }
+    }
+    func cachedDailyPrices() async -> [GoldDailyPrice]? {
+        guard let points = await MarketHistoryCache.shared.cached(scope: cacheScope, series: cacheSeries) else { return nil }
+        return dailyPoints(points)
+    }
+    func cachedHistory() async -> [GoldHistoryPoint]? {
+        guard let points = await MarketHistoryCache.shared.cached(scope: cacheScope, series: cacheSeries) else { return nil }
+        return historicalPoints(points)
+    }
     func fetchDailyPrices() async throws -> [GoldDailyPrice] {
-        let daily: DailyDTO = try await get("app/market/gold/daily")
-        return try Self.decodeDailyBars(daily.bars)
+        dailyPoints(try await synchronizedPoints())
     }
 
     struct HistoryDTO: Decodable {
@@ -82,8 +107,7 @@ struct BackendGoldPriceService: GoldPriceServicing, GoldQuoteServicing, GoldIntr
         let source: String
     }
     func fetchHistory() async throws -> [GoldHistoryPoint] {
-        let dto: HistoryDTO = try await get("app/market/gold/history")
-        return try Self.decodeHistory(dto)
+        historicalPoints(try await synchronizedPoints())
     }
     static func decodeHistory(_ dto: HistoryDTO) throws -> [GoldHistoryPoint] {
         guard dto.unit == "USD/troy_oz" else { throw ServiceError.malformedPayload }
@@ -103,10 +127,17 @@ struct BackendGoldPriceService: GoldPriceServicing, GoldQuoteServicing, GoldIntr
 
     // MARK: - GoldQuoteServicing
 
+    func cachedQuote() async -> GoldQuote? {
+        await MarketHistoryCache.shared.cachedQuote(scope: cacheScope, series: cacheSeries)
+    }
     func fetchQuote() async throws -> GoldQuote {
+        let generation = await MarketHistoryCache.shared.token()
         let path = instrumentID.map { "app/market/gold/instruments/\($0)/quote" } ?? "app/market/gold/quote"
         let dto: QuoteDTO = try await get(path)
-        return try Self.decodeQuote(dto)
+        let quote = try Self.decodeQuote(dto)
+        // Disk pressure must not prevent a live quote from being shown.
+        try? await MarketHistoryCache.shared.saveQuote(quote, scope: cacheScope, series: cacheSeries, generation: generation)
+        return quote
     }
 
     private struct IntradayDTO: Decodable {

@@ -9,6 +9,8 @@ struct AccountView: View {
     @State private var confirmDelete = false
     @State private var deleting = false
     @State private var error: String?
+    @State private var clearingCache = false
+    @State private var cacheNotice: String?
 
     var body: some View {
         ScrollView {
@@ -42,6 +44,27 @@ struct AccountView: View {
                         .font(.headline).foregroundStyle(GoldTheme.goldSoft)
                     Text("登录暂不上传或同步持仓。行情、持仓和添加记录仍可匿名使用；切换或注销账户不会删除本机记录。")
                         .font(.subheadline).foregroundStyle(GoldTheme.textSecondary).lineSpacing(5)
+                }.goldCard(padding: 20)
+                VStack(alignment: .leading, spacing: 12) {
+                    Button {
+                        Task {
+                            clearingCache = true
+                            defer { clearingCache = false }
+                            do {
+                                try await MarketHistoryCache.shared.clear()
+                                cacheNotice = "行情缓存已清除，下次查看时重新下载。"
+                            } catch { cacheNotice = "清除失败，请重试。" }
+                        }
+                    } label: {
+                        HStack {
+                            Label("清除行情缓存", systemImage: "trash")
+                            Spacer()
+                            if clearingCache { ProgressView() }
+                        }
+                    }.foregroundStyle(GoldTheme.gold).disabled(clearingCache)
+                        .accessibilityIdentifier("account.clearMarketCache")
+                    Text(cacheNotice ?? "清除已下载的行情数据，保留持仓记录和登录状态。")
+                        .font(.footnote).foregroundStyle(GoldTheme.textSecondary)
                 }.goldCard(padding: 20)
                 if let user = session.user {
                     VStack(spacing: 14) {

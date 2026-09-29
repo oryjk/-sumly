@@ -30,6 +30,9 @@ func NewRouter(dependencies Dependencies) *gin.Engine {
 	if dependencies.GoldInstruments != nil {
 		dependencies.GoldInstruments.RegisterPublicRoutes(app)
 	}
+	if dependencies.GoldSync != nil {
+		dependencies.GoldSync.RegisterPublicRoutes(app)
+	}
 	if dependencies.GoldHistory != nil {
 		dependencies.GoldHistory.RegisterPublicRoutes(app)
 	}

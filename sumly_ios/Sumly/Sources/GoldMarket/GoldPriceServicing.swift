@@ -5,9 +5,19 @@ import Foundation
 protocol GoldPriceServicing: Sendable {
     /// 按日期升序返回日线序列。
     func fetchDailyPrices() async throws -> [GoldDailyPrice]
+    func cachedDailyPrices() async -> [GoldDailyPrice]?
 }
 
 /// 实时报价数据源抽象；轮询节奏由上层编排。
 protocol GoldQuoteServicing: Sendable {
     func fetchQuote() async throws -> GoldQuote
+    func cachedQuote() async -> GoldQuote?
+}
+
+extension GoldPriceServicing {
+    func cachedDailyPrices() async -> [GoldDailyPrice]? { nil }
+}
+
+extension GoldQuoteServicing {
+    func cachedQuote() async -> GoldQuote? { nil }
 }

@@ -89,6 +89,35 @@ type GoldRealtimeSample struct {
 	PriceCny  float64
 }
 
+type MarketDailyJob struct {
+	Symbol       string
+	CompletedDay pgtype.Date
+	RetryAt      pgtype.Timestamptz
+}
+
+type MarketHistoryClock struct {
+	ID       bool
+	Epoch    pgtype.UUID
+	Revision int64
+}
+
+type MarketHistoryPoint struct {
+	Symbol      string
+	TradingDate pgtype.Date
+	Granularity string
+	Open        float64
+	High        float64
+	Low         float64
+	Close       float64
+	Source      string
+	Deleted     bool
+	Revision    int64
+}
+
+type MarketHistorySeed struct {
+	Name string
+}
+
 type User struct {
 	ID          int64
 	Openid      string
