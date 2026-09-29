@@ -26,14 +26,14 @@ struct ChartWindowStatistics: Equatable {
     }
 }
 
-/// Keep the 26-point badges inside the plot and apart, even near a clipped edge.
+/// Keep the 40-point price/date badges inside the plot and apart, even near a clipped edge.
 enum ChartExtremaLabelLayout {
     static func y(point: Double, other: Double?, height: Double, above: Bool) -> Double {
-        func clamp(_ value: Double) -> Double { min(max(value, 14), max(14, height - 14)) }
-        var position = clamp(point + (above ? -22 : 22))
+        func clamp(_ value: Double) -> Double { min(max(value, 21), max(21, height - 21)) }
+        var position = clamp(point + (above ? -30 : 30))
         if let other {
-            let otherPosition = clamp(other + (above ? 22 : -22))
-            position = above ? min(position, otherPosition - 32) : max(position, otherPosition + 32)
+            let otherPosition = clamp(other + (above ? 30 : -30))
+            position = above ? min(position, otherPosition - 46) : max(position, otherPosition + 46)
         }
         return clamp(position)
     }

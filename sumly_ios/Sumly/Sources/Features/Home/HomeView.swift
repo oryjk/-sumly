@@ -297,14 +297,18 @@ struct HomeView: View {
             let centerX = min(max(frame.minX + x, frame.minX + width / 2), frame.maxX - width / 2)
             let otherY = other.flatMap { model.priceScale.value($0.price) }.flatMap { proxy.position(forY: $0) }
             let centerY = frame.minY + ChartExtremaLabelLayout.y(point: y, other: otherY.map { Double($0) }, height: frame.height, above: above)
-            Text(title + " ¥" + point.price.formatted(.number.precision(.fractionLength(2))))
-                .font(.system(size: 11, weight: .medium)).monospacedDigit()
-                .foregroundStyle(GoldTheme.goldSoft)
-                .lineLimit(1).minimumScaleFactor(0.75)
-                .frame(width: width, height: 26)
+            VStack(spacing: 3) {
+                Text(title + " ¥" + point.price.formatted(.number.precision(.fractionLength(2))))
+                    .font(.system(size: 11, weight: .medium)).foregroundStyle(GoldTheme.goldSoft)
+                Text(pointLabel(point))
+                    .font(.system(size: 9)).foregroundStyle(GoldTheme.textSecondary)
+            }
+                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
+                .frame(width: width, height: 40)
                 .background(GoldTheme.card.opacity(0.95), in: GoldTheme.rangeShape)
                 .position(x: centerX, y: centerY)
-                .accessibilityLabel(title + " " + point.price.formatted(.number.precision(.fractionLength(2))) + " 元每克")
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(title + " " + point.price.formatted(.number.precision(.fractionLength(2))) + " 元每克，" + pointLabel(point))
                 .allowsHitTesting(false)
         }
     }

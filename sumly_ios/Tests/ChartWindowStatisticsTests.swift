@@ -34,8 +34,8 @@ import Testing
     for y in [0.0, 1, 100, 199, 200] {
         let high = ChartExtremaLabelLayout.y(point: y, other: y, height: 200, above: true)
         let low = ChartExtremaLabelLayout.y(point: y, other: y, height: 200, above: false)
-        #expect(high >= 14)
-        #expect(low <= 186)
-        #expect(low - high >= 32)
+        #expect(high >= 21)
+        #expect(low <= 179)
+        #expect(low - high >= 46)
     }
 }
