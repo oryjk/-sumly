@@ -19,7 +19,7 @@ The app converts nominal prices using current FX and labels this explicitly. An 
 
 ## Release status
 
-These changes have not yet been deployed to jd or uploaded to TestFlight. The previously uploaded 0.1.1 (4) contains Apple login but does not contain this chart change. Release the backend history endpoint before distributing the new iOS build. Existing Apple key configuration and database migrations from the earlier deployment are unchanged.
+Backend deployed to jd on 2026-09-29 as `sumly-backend:20260929-market-cache-b5` from commit `1adf62c`. Migration 00006 completed and 116 annual reference points were seeded. Apple key mount and existing environment were preserved. iOS 0.1.1 (5) is the accompanying release; upload outcome is recorded below.
 
 ## Incremental caching update
 
@@ -32,6 +32,18 @@ These changes have not yet been deployed to jd or uploaded to TestFlight. The pr
 - 我的 → 清除行情缓存 deletes this dedicated directory and invalidates pending cache writes and chart buffers. It never opens or deletes the SwiftData holdings store or Keychain. Subsequent viewing downloads a fresh snapshot.
 - The chart's 线性/对数 button defaults to linear and transforms only vertical plotting coordinates. Tooltips retain original CNY/gram prices and annual/daily meaning, and horizontal gestures are unchanged.
 
-Release requires migration 00006 and deployment of `/market/gold/sync` before the next iOS build. No new deployment or TestFlight upload was performed for this update.
+Deployment order: apply migration 00006 and release `/market/gold/sync` before distributing iOS build 5.
 
 Verification for incremental update: complete Go suite (explicit test database), vet and API build passed. iOS 90 tests passed, including cancellation and real-source OHLC regressions. Simulator QA verified clear removes the dedicated cache directory, subsequent viewing re-downloads, and an offline relaunch still displays the 2,901-point history and last quote with an explicit refresh-failure message.
+
+## Release verification — 2026-09-29
+
+- Code commit `1adf62c` pushed to `origin/main`.
+- jd release directory: `/root/docker_data/sumly/releases/20260929-market-cache-b5`. Previous Compose/environment configuration and old image retained. Database backup was explicitly skipped at the user’s request.
+- Linux amd64 API/migration artifact hashes matched between local and server. Migration 00006 applied successfully; health and nginx checks passed.
+- Public history snapshot: 5,308 records, including 116 annual points, 754,704 bytes. Reusing its cursor returned zero changes and a 159-byte response.
+- Public quote endpoint succeeded; native auth capabilities still report Apple enabled.
+- iOS release archive is version 0.1.1 build 5, bundle `com.oryjk.sumly`, using the production API URL with no simulator override.
+
+- App Store Connect upload completed successfully at 2026-09-29 16:10:23 Asia/Shanghai (`Upload succeeded`, `EXPORT SUCCEEDED`). Apple reported the package is processing; TestFlight availability follows processing.
+- Persistent daily job state confirms XAUUSD and AU9999 completed for 2026-09-29. The existing Yahoo COMEX source returned HTTP 403; its stored history remains available and the durable job retries after 15 minutes. This does not affect the homepage London gold history.
