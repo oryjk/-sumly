@@ -85,7 +85,7 @@ private struct GoldRootView: View {
                 GoldTabBarShape().fill(GoldTheme.card)
                 tabItem("动态", symbol: "house.fill", index: 0, scale: scale)
                     .position(x: width * 0.1, y: 42 * scale)
-                tabItem("攒金", symbol: "bag.fill", index: 1, scale: scale)
+                tabItem("记金", symbol: "bag.fill", index: 1, scale: scale)
                     .position(x: width * 0.3, y: 42 * scale)
                 tabItem("记账", symbol: "yensign.square.fill", index: 2, scale: scale)
                     .position(x: width * 0.7, y: 42 * scale)

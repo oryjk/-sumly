@@ -2,7 +2,9 @@ package postgres
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sort"
@@ -20,6 +22,10 @@ type NativeStore struct{ pool *pgxpool.Pool }
 
 func NewNativeStore(p *pgxpool.Pool) *NativeStore { return &NativeStore{p} }
 func ts(t time.Time) pgtype.Timestamptz           { return pgtype.Timestamptz{Time: t, Valid: true} }
+func appleNotificationDigest(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])
+}
 func (s *NativeStore) transaction(ctx context.Context, f func(*q.Queries) error) error {
 	tx, e := s.pool.Begin(ctx)
 	if e != nil {
@@ -115,6 +121,15 @@ func (s *NativeStore) Login(ctx context.Context, m ports.LoginMutation) (u domai
 		if e := db.NativeLock(ctx, m.Provider+":"+m.Subject); e != nil {
 			return e
 		}
+		if m.Provider == "apple" {
+			latest, e := db.NativeLatestAppleAccountEvent(ctx, appleNotificationDigest(m.Subject))
+			if e != nil && !errors.Is(e, pgx.ErrNoRows) {
+				return e
+			}
+			if e == nil && (m.ProviderIssuedAt.IsZero() || !m.ProviderIssuedAt.After(latest.Time)) {
+				return domain.ErrCredentials
+			}
+		}
 		i, e := identity(ctx, db, m.Provider, m.Subject)
 		exists := e == nil
 		if e != nil && !errors.Is(e, domain.ErrCredentials) {
@@ -158,6 +173,11 @@ func (s *NativeStore) Login(ctx context.Context, m ports.LoginMutation) (u domai
 				if e = db.NativeUpdateApple(ctx, q.NativeUpdateAppleParams{Provider: m.Provider, Subject: m.Subject, AppleRefresh: m.AppleRefresh}); e != nil {
 					return e
 				}
+			}
+		}
+		if m.Provider == "apple" && !m.ProviderIssuedAt.IsZero() {
+			if e = db.NativeRememberAppleAuthentication(ctx, q.NativeRememberAppleAuthenticationParams{Subject: m.Subject, Column2: ts(m.ProviderIssuedAt)}); e != nil {
+				return e
 			}
 		}
 		m.Session.UserID = u.ID
@@ -309,4 +329,60 @@ func (s *NativeStore) FindIdentityByUser(ctx context.Context, id int64, provider
 		return domain.Identity{}, e
 	}
 	return identity(ctx, db, provider, sub)
+}
+
+func (s *NativeStore) ApplyAppleEvent(ctx context.Context, event domain.AppleNotification) error {
+	return s.transaction(ctx, func(db *q.Queries) error {
+		if event.ID == "" || event.Subject == "" || event.IssuedAt.IsZero() || (event.Type != "consent-revoked" && event.Type != "account-deleted") {
+			return domain.ErrInvalid
+		}
+		if e := db.NativeLock(ctx, "apple:"+event.Subject); e != nil {
+			return e
+		}
+		eventID := appleNotificationDigest(event.ID)
+		subjectDigest := appleNotificationDigest(event.Subject)
+		seen, e := db.NativeAppleNotificationExists(ctx, eventID)
+		if e != nil {
+			return e
+		}
+		if seen {
+			return nil
+		}
+		if e = db.NativeInsertAppleNotification(ctx, q.NativeInsertAppleNotificationParams{
+			ID: eventID, Subject: subjectDigest, EventType: event.Type, IssuedAt: ts(event.IssuedAt), EventTime: event.EventTime,
+		}); e != nil {
+			return e
+		}
+		appleIdentity, e := identity(ctx, db, "apple", event.Subject)
+		if errors.Is(e, domain.ErrCredentials) {
+			return nil
+		}
+		if e != nil {
+			return e
+		}
+		if e = userLock(ctx, db, appleIdentity.User.ID); e != nil {
+			return e
+		}
+		appleIdentity, e = identity(ctx, db, "apple", event.Subject)
+		if errors.Is(e, domain.ErrCredentials) {
+			return nil
+		}
+		if e != nil {
+			return e
+		}
+		newerLogin, e := db.NativeAppleAuthenticationAfter(ctx, q.NativeAppleAuthenticationAfterParams{Subject: event.Subject, Column2: ts(event.IssuedAt)})
+		if e != nil {
+			return e
+		}
+		if newerLogin {
+			return nil
+		}
+		if event.Type == "account-deleted" {
+			return db.NativeDeleteUser(ctx, appleIdentity.User.ID)
+		}
+		if e = db.NativeRevokeUser(ctx, appleIdentity.User.ID); e != nil {
+			return e
+		}
+		return db.NativeClearAppleRefresh(ctx, event.Subject)
+	})
 }

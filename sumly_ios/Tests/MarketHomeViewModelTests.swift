@@ -122,3 +122,74 @@ private struct HomeMarketFixture: GoldPriceServicing, GoldQuoteServicing, GoldRe
     #expect(result.first?.date == last.addingTimeInterval(-1200))
     #expect(result.last?.date == last)
 }
+
+private struct HomeHistoryFixture: GoldHistoryServicing {
+    var failing = false
+    func fetchHistory() async throws -> [GoldHistoryPoint] {
+        if failing { throw URLError(.notConnectedToInternet) }
+        return [GoldHistoryPoint(date: GoldDailyPrice.parseDay("1900-07-01")!, price: 19, granularity: .annual, source: "usgs-ds140"),
+                GoldHistoryPoint(date: GoldDailyPrice.parseDay("2015-07-01")!, price: 1163, granularity: .annual, source: "usgs-ds140"),
+                GoldHistoryPoint(date: GoldDailyPrice.parseDay("2016-01-04")!, price: 1074, granularity: .daily, source: "sina-xauusd")]
+    }
+}
+@MainActor @Test func historyKeepsGranularityAndPinchStateAcrossQuoteRefresh() async {
+    let service = HomeMarketFixture()
+    let model = MarketHomeViewModel(dailyService: service, quoteService: service, realtimeService: service, historyService: HomeHistoryFixture())
+    model.range = .history
+    await model.refresh()
+    #expect(model.points.count == 4)
+    #expect(model.points.first?.granularity == .annual)
+    #expect(abs(model.points[0].price - 19 * 7 / 31.1034768) < 0.000001)
+    #expect(model.fullDomain.lowerBound == GoldDailyPrice.parseDay("1900-01-01"))
+    model.beginChartGesture()
+    model.transformChart(scale: 10, anchor: 1, translation: 0)
+    model.endChartGesture()
+    let window = model.xDomain
+    #expect(window.lowerBound > model.fullDomain.lowerBound)
+    await model.refresh()
+    #expect(model.xDomain == window)
+    model.range = .month
+    #expect(model.viewport == nil)
+    #expect(model.selectedDate == nil)
+}
+@MainActor @Test func unavailableHistoryDoesNotPretendOneLiveQuoteIsCenturyOfHistory() async {
+    let service = HomeMarketFixture()
+    let model = MarketHomeViewModel(dailyService: service, quoteService: service, realtimeService: service, historyService: HomeHistoryFixture(failing: true))
+    model.range = .history
+    await model.refresh()
+    #expect(model.points.isEmpty)
+    #expect(model.message?.contains("历史走势加载失败") == true)
+}
+
+@MainActor @Test func zoomedAnnualPointCanBeInspectedAcrossItsYear() async {
+    let service = HomeMarketFixture()
+    let model = MarketHomeViewModel(dailyService: service, quoteService: service, realtimeService: service, historyService: HomeHistoryFixture())
+    model.range = .history
+    await model.refresh()
+    model.beginChartGesture()
+    model.transformChart(scale: 10000, anchor: 0, translation: 0)
+    model.endChartGesture()
+    model.selectChart(at: 0.1)
+    #expect(model.selectedPoint?.date == GoldDailyPrice.parseDay("1900-07-01"))
+}
+private actor AdvancingRealtimeFixture: GoldRealtimeServicing {
+    var end = Date.now.addingTimeInterval(-900)
+    func advance() { end = end.addingTimeInterval(900) }
+    func fetchRealtime() async throws -> [MarketChartPoint] {
+        (0...240).map { MarketChartPoint(date: end.addingTimeInterval(Double($0 - 240) * 5), price: 900) }
+    }
+}
+@MainActor @Test func rollingRealtimeWindowClampsOldZoomWithoutGoingBlank() async {
+    let service = HomeMarketFixture()
+    let realtime = AdvancingRealtimeFixture()
+    let model = MarketHomeViewModel(dailyService: service, quoteService: service, realtimeService: realtime)
+    await model.refresh()
+    model.beginChartGesture()
+    model.transformChart(scale: 100, anchor: 0, translation: 0)
+    model.endChartGesture()
+    await realtime.advance()
+    await model.refresh()
+    #expect(model.xDomain.lowerBound >= model.fullDomain.lowerBound)
+    #expect(model.xDomain.upperBound.timeIntervalSince(model.xDomain.lowerBound) == 30)
+    #expect(model.visiblePoints.contains { model.xDomain.contains($0.date) })
+}

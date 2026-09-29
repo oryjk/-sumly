@@ -51,6 +51,42 @@ x-native-errors: &nativeErrors
           $ref: "#/components/schemas/ErrorResponse"
 
 paths:
+  /api/v1/app/market/gold/history:
+    get:
+      tags: ["App Market"]
+      operationId: goldLongHistory
+      summary: Gold annual references 1900–2015 and daily closes from 2016
+      description: Nominal USD per troy ounce. Annual USGS DS140 points use July 1 only as a plotting date; daily points are Sina XAUUSD closes. Non-trading days are not synthesized.
+      security: []
+      responses:
+        "200":
+          description: Chronological annual and daily observations
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code, message, data]
+                properties:
+                  code: {type: integer, enum: [0]}
+                  message: {type: string}
+                  data:
+                    type: object
+                    required: [unit, points]
+                    properties:
+                      unit: {type: string, enum: ["USD/troy_oz"]}
+                      points:
+                        type: array
+                        items:
+                          type: object
+                          required: [date, price, granularity, source]
+                          properties:
+                            date: {type: string, format: date}
+                            price: {type: number, exclusiveMinimum: true, minimum: 0}
+                            granularity: {type: string, enum: [annual, daily]}
+                            source: {type: string, enum: [usgs-ds140, sina-xauusd]}
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /api/v1/app/auth/capabilities:
     get:
       tags: ["App Auth"]
@@ -121,6 +157,31 @@ paths:
                   type: "string"
                   maxLength: 120
               required: ["challenge_id", "identity_token", "authorization_code"]
+              additionalProperties: false
+
+  /api/v1/app/auth/apple/notifications:
+    post:
+      tags: ["App Auth"]
+      operationId: "nativeAppleServerNotification"
+      summary: "Apple Sign in with Apple server-to-server account-change notification endpoint."
+      description: "Verifies Apple-signed JWS notifications (signature, issuer, audience, issued-at, and expiration when present). consent-revoked revokes active sessions and clears the stored Apple refresh credential; account-deleted deletes the Apple-backed Sumly account. email-enabled/email-disabled are accepted without account mutation because Sumly does not use Apple relay email as an identity."
+      security: []
+      responses:
+        <<: *nativeErrors
+        "200":
+          description: "Notification accepted"
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              type: "object"
+              properties:
+                payload:
+                  type: "string"
+                  maxLength: 16384
+                  description: "Apple-signed JWS notification payload."
+              required: ["payload"]
               additionalProperties: false
 
   /api/v1/app/auth/phone/code:

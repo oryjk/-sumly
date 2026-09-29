@@ -43,7 +43,7 @@ struct HoldingsCalendarSheet: View {
                 }.padding(16)
             }
             .background(GoldTheme.background)
-            .navigationTitle("攒金日历").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("记金日历").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly) } }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 Button { showingAdd = true } label: { Label("添加黄金", systemImage: "plus").frame(minHeight: 24) }
@@ -139,7 +139,7 @@ struct HoldingsCalendarSheet: View {
     private var summary: some View {
         let stats = HoldingCalendarLogic.stats(selected, quote: model.quote?.cnyPerGram)
         return VStack(alignment: .leading, spacing: 12) {
-            HStack { GoldTheme.gold.frame(width: 4, height: 18); Text("攒金统计").font(.headline); Text(title).font(.caption).foregroundStyle(GoldTheme.textSecondary) }
+            HStack { GoldTheme.gold.frame(width: 4, height: 18); Text("记金统计").font(.headline); Text(title).font(.caption).foregroundStyle(GoldTheme.textSecondary) }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 22) {
                 metric("购入笔数", "\(stats.count)")
                 metric("总重量(克)", stats.grams.moneyText)

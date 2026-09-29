@@ -113,7 +113,7 @@ COMEX 数据源为延迟报价，标记 `delay_seconds:1800`，不是交易所�
 
 ## Native account authentication
 
-Apply forward migration `00004_native_auth.sql` before setting
+Apply forward migrations `00004_native_auth.sql` and `00005_apple_server_notifications.sql` before setting
 `NATIVE_AUTH_ENABLED=true`. Existing WeChat/dev routes and user data are preserved.
 Run `go run ./cmd/dbmigrate` with the deployment's approved `DATABASE_URL` configured
 (or `make migrate-up` in an explicitly selected environment). Do not run migrations
@@ -121,7 +121,7 @@ against production as part of tests. Generate SQL bindings with `make generate`
 (sqlc v1.31.1; an installed `sqlc generate` of that version is equivalent).
 
 The exact native contract is in `docs/openapi.yaml`, under `/api/v1/app/auth`:
-capabilities; Apple challenge/login; phone code/login; email code/register/login/
+capabilities; Apple challenge/login/server notifications; phone code/login; email code/register/login/
 reset-password; refresh/logout; me; DELETE account. Responses retain the
 `{code,message,data}` envelope. Phone login automatically creates a verified account;
 email registration needs a code. No provider linking or holdings synchronization occurs.
@@ -135,6 +135,7 @@ Configuration (blank provider fields disable that provider):
 | `NATIVE_AUTH_ENABLED` | Explicit `true`; default false reports all capabilities false. |
 | `JWT_SECRET` | At least 32 random bytes. HMAC domain separation derives OTP/refresh digests and the AES-GCM Apple token encryption key. Keep stable and secret: changing it also makes stored Apple credentials unreadable; migrate/re-encrypt them before rotation. |
 | `APPLE_CLIENT_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY_FILE` | Enable Sign in with Apple for the iOS App ID in the Apple Developer portal. Client ID must equal the app's bundle ID audience. Create an associated Sign in with Apple key, mount its PKCS8 `.p8` securely and read-only, and provide its path. No portal changes are made by this implementation. |
+| Apple Server-to-Server Notification Endpoint | Register `https://oryjk.cn/sumly/api/v1/app/auth/apple/notifications` on the primary App ID after this backend is deployed over TLS 1.2+. The endpoint verifies Apple's signed JWS before processing account changes. |
 | `ALIYUN_ACCESS_KEY_ID`, `ALIYUN_ACCESS_KEY_SECRET`, `ALIYUN_SMS_SIGN_NAME`, `ALIYUN_SMS_TEMPLATE_CODE` | Alibaba Cloud mainland SMS account, least-privilege SendSms access, approved sign name and verification template containing `${code}`. Adapter signs HTTPS RPC SendSms (2017-05-25). Only mainland +86 mobile delivery is supported. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TLS_MODE` | Authenticated sender with authorized From mailbox. Mode explicitly `tls` (usually port 465) or `starttls` (usually 587). Certificate verification and TLS >=1.2 are mandatory; no plaintext fallback. Configure sender-domain SPF/DKIM/DMARC with the mail operator. |
 | `TRUSTED_PROXY_CIDRS` | Comma-separated explicit proxy CIDRs. Empty trusts no forwarded IPs. Configure only actual ingress proxies and ensure they replace untrusted forwarded headers. |
@@ -157,6 +158,7 @@ Security and limits:
   server nonce on both supplied and code-exchanged ID tokens. Challenge nonce is already
   the exact value to send to Apple, **do not hash it on iOS**. Refresh credentials are
   AES-GCM encrypted. JWKS requests/cache refresh and all external responses are bounded.
+- Apple server notifications are accepted only at `POST /api/v1/app/auth/apple/notifications` with `{ "payload": "<JWS>" }`. The JWS is verified against Apple JWKS plus issuer/audience/issued-at; an `exp` claim is validated when Apple includes it. `consent-revoked` revokes active sessions and clears the stored Apple refresh credential; `account-deleted` deletes the Apple-backed Sumly server account; relay-email enable/disable events are acknowledged without account mutation because Sumly does not use Apple relay email as an identity. Destructive notifications are durably deduplicated and ordered against later Apple logins using signed `jti`/`iat`; only SHA-256 digests of notification IDs and Apple subjects are retained for this purpose, not the raw identifiers.
 - Access JWT lifetime is 900 seconds with live database session and user-state checks,
   including existing authenticated app routes. Opaque refresh tokens rotate once,
   are hashed at rest, and expire 30 days after primary login. Logout revokes the family
@@ -189,3 +191,9 @@ approved real message delivery. These live-provider checks are not part of local
 Provider protocol references: [Apple identity verification](https://developer.apple.com/documentation/signinwithapple/verifying-a-user),
 [Apple account deletion/revocation](https://developer.apple.com/documentation/technotes/tn3194-handling-account-deletions-and-revoking-tokens-for-sign-in-with-apple),
 [Aliyun RPC signing](https://www.alibabacloud.com/help/en/sms/signature-method).
+
+### Apple notification bootstrap
+
+Before downloading the Sign in with Apple `.p8` key, apply migrations through `00005`, set `NATIVE_AUTH_ENABLED=true` and `APPLE_CLIENT_ID=com.oryjk.sumly`, then deploy. Notifications verify Apple public signatures without a developer private key. Apple login capabilities remain disabled until Team ID, Key ID and the mounted private key are configured. Invalid notification signatures return 401; a browser GET is not an endpoint test.
+
+Notification processing is idempotent and records the latest verified Apple login issue time so delayed older events cannot invalidate a newer login. `consent-revoked` revokes server sessions; `account-deleted` deletes the associated server account. Local iOS holdings remain on the device.

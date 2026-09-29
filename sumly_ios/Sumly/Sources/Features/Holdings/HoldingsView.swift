@@ -135,7 +135,7 @@ struct HoldingsView: View {
                 metric("预估收益(元)", stats.hasValuation ? stats.profit.moneyText : "—", color: stats.profit >= 0 ? GoldTheme.up : GoldTheme.down)
             }.padding(.top, 5)
             HStack(spacing: 16) {
-                action("攒金日历", filled: false) { sheet = .calendar }
+                action("记金日历", filled: false) { sheet = .calendar }
                 action("添加黄金", filled: true) { sheet = .add }
                 action("赠卖记录", filled: false) { sheet = .history }
             }.padding(.horizontal, 28).padding(.top, 17).padding(.bottom, 18)
@@ -144,7 +144,7 @@ struct HoldingsView: View {
         .background(GoldTheme.card, in: GoldTheme.holdingsCardShape)
         .overlay(alignment: .topTrailing) {
             VStack(spacing: 12) {
-                Button { sheet = .settings } label: { Image(systemName: "gearshape").font(.system(size: 17)) }.accessibilityLabel("攒金设置")
+                Button { sheet = .settings } label: { Image(systemName: "gearshape").font(.system(size: 17)) }.accessibilityLabel("记金设置")
                 Button { batch.toggle(); selection = [] } label: { Text(batch ? "完" : "批").font(.system(size: 11)).frame(width: 20, height: 20).overlay(GoldTheme.capsuleShape.strokeBorder(GoldTheme.textSecondary, lineWidth: 1)) }.accessibilityLabel(batch ? "完成批量管理" : "批量管理")
             }.foregroundStyle(GoldTheme.textSecondary).padding(14)
         }
@@ -178,7 +178,7 @@ struct HoldingsView: View {
     private var emptyState: some View {
         VStack(spacing: 10) {
             GoldMoneyBagShape().fill(GoldTheme.gold).frame(width: 30, height: 33)
-            Text(activeRecords.isEmpty ? "还没有攒金记录" : "没有符合条件的记录").font(.subheadline).foregroundStyle(GoldTheme.text)
+            Text(activeRecords.isEmpty ? "还没有记金记录" : "没有符合条件的记录").font(.subheadline).foregroundStyle(GoldTheme.text)
             Text(activeRecords.isEmpty ? "从第一笔黄金开始，慢慢攒下你的底气" : "试试其他关键词或筛选条件").font(.caption).foregroundStyle(GoldTheme.textSecondary)
         }.frame(maxWidth: .infinity).listRowBackground(GoldTheme.background).listRowSeparator(.hidden)
     }
@@ -202,7 +202,7 @@ struct HoldingsView: View {
                 }
                 Section { Text("预估价值按总克数与最新可用报价计算，实际变现金额可能包含工费、回购价差等差异。持仓记录保存在当前设备。").font(.footnote).foregroundStyle(GoldTheme.textSecondary) }
                 Toggle("隐藏金额", isOn: $hideAmounts)
-            }.navigationTitle("攒金设置").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { sheet = nil } } }
+            }.navigationTitle("记金设置").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { sheet = nil } } }
         }.presentationBackground(GoldTheme.background)
     }
     private func mutate(_ operation: () -> Void) { operation(); do { try context.save() } catch { context.rollback(); self.error = "未能保存修改，请重试。" } }

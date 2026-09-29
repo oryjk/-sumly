@@ -166,9 +166,28 @@ func (a Accounts) AppleLogin(ctx context.Context, id, token, code, nickname, ip 
 	if e != nil {
 		return domain.LoginResult{}, e
 	}
-	return a.login(ctx, ports.LoginMutation{Provider: "apple", Subject: i.Subject, Nickname: nickname, AppleRefresh: encrypted})
+	return a.login(ctx, ports.LoginMutation{Provider: "apple", Subject: i.Subject, Nickname: nickname, AppleRefresh: encrypted, ProviderIssuedAt: i.IssuedAt})
 }
 
 func (a Accounts) appleThrottle(ctx context.Context, operation, ip string) error {
 	return a.Store.TakeQuota(ctx, []domain.Quota{{Key: "apple:" + operation + ":ip:" + a.Crypto.Digest("ip", ip), Limit: 20, Window: time.Hour}, {Key: "apple:" + operation + ":global", Limit: 1000, Window: time.Hour}})
+}
+
+func (a Accounts) HandleAppleNotification(ctx context.Context, payload string) error {
+	if a.Store == nil || a.Apple == nil {
+		return domain.ErrUnavailable
+	}
+	event, err := a.Apple.VerifyNotification(ctx, payload)
+	if err != nil {
+		return err
+	}
+	switch event.Type {
+	case "email-enabled", "email-disabled":
+		// Sumly does not use Apple relay email as an account identity, so there is no server state to update.
+		return nil
+	case "consent-revoked", "account-deleted":
+		return a.Store.ApplyAppleEvent(ctx, event)
+	default:
+		return domain.ErrInvalid
+	}
 }

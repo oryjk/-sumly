@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/rsa"
@@ -130,6 +131,77 @@ func (a *Apple) verifyToken(ctx context.Context, raw, nonceHash string) (*appleC
 	}
 	return c, nil
 }
+
+type appleEventsClaim struct {
+	domain.AppleNotification
+}
+
+func (e *appleEventsClaim) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 {
+		return domain.ErrCredentials
+	}
+	raw := data
+	if data[0] == '"' {
+		var encoded string
+		if err := json.Unmarshal(data, &encoded); err != nil {
+			return err
+		}
+		raw = []byte(encoded)
+	}
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		return domain.ErrCredentials
+	}
+	var event domain.AppleNotification
+	if len(raw) > 0 && raw[0] == '[' {
+		var events []domain.AppleNotification
+		if err := json.Unmarshal(raw, &events); err != nil {
+			return err
+		}
+		if len(events) != 1 {
+			return domain.ErrCredentials
+		}
+		event = events[0]
+	} else if err := json.Unmarshal(raw, &event); err != nil {
+		return err
+	}
+	e.AppleNotification = event
+	return nil
+}
+
+type appleNotificationClaims struct {
+	Events appleEventsClaim `json:"events"`
+	jwt.RegisteredClaims
+}
+
+func (a *Apple) VerifyNotification(ctx context.Context, raw string) (domain.AppleNotification, error) {
+	// Notifications use Apple's public keys; exchanging login codes also needs our private key.
+	if a == nil || a.config.ClientID == "" {
+		return domain.AppleNotification{}, domain.ErrUnavailable
+	}
+	if len(raw) == 0 || len(raw) > 16384 {
+		return domain.AppleNotification{}, domain.ErrCredentials
+	}
+	claims := &appleNotificationClaims{}
+	token, err := jwt.ParseWithClaims(raw, claims, func(token *jwt.Token) (any, error) {
+		kid, ok := token.Header["kid"].(string)
+		if !ok || kid == "" || len(kid) > 128 {
+			return nil, domain.ErrCredentials
+		}
+		return a.key(ctx, kid)
+	}, jwt.WithValidMethods([]string{"RS256"}), jwt.WithIssuer(appleIssuer), jwt.WithAudience(a.config.ClientID), jwt.WithIssuedAt())
+	if err != nil || !token.Valid || claims.IssuedAt == nil || len(claims.Audience) != 1 {
+		return domain.AppleNotification{}, domain.ErrCredentials
+	}
+	event := claims.Events.AppleNotification
+	if claims.ID == "" || len(claims.ID) > 255 || event.Type == "" || len(event.Type) > 64 || event.Subject == "" || len(event.Subject) > 255 {
+		return domain.AppleNotification{}, domain.ErrCredentials
+	}
+	event.ID = claims.ID
+	event.IssuedAt = claims.IssuedAt.Time
+	return event, nil
+}
+
 func (a *Apple) clientSecret() (string, error) {
 	now := time.Now()
 	token := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.RegisteredClaims{Issuer: a.config.TeamID, Subject: a.config.ClientID, Audience: jwt.ClaimStrings{appleIssuer}, IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(5 * time.Minute))})
@@ -195,7 +267,7 @@ func (a *Apple) Verify(ctx context.Context, raw, code, nonceHash string) (ports.
 	if e != nil || second.Subject != first.Subject || tokens.Refresh == "" || len(tokens.Refresh) > 8192 {
 		return ports.AppleIdentity{}, domain.ErrCredentials
 	}
-	return ports.AppleIdentity{Subject: first.Subject, RefreshToken: tokens.Refresh}, nil
+	return ports.AppleIdentity{Subject: first.Subject, RefreshToken: tokens.Refresh, IssuedAt: first.IssuedAt.Time}, nil
 }
 func (a *Apple) Revoke(ctx context.Context, token string) error {
 	if !a.Enabled() || token == "" {

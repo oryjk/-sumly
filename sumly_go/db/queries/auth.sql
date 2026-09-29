@@ -53,6 +53,9 @@ INSERT INTO auth_identities(user_id,provider,subject,password_hash,apple_refresh
 -- name: NativeUpdateApple :exec
 UPDATE auth_identities SET apple_refresh=$3 WHERE provider=$1 AND subject=$2;
 
+-- name: NativeClearAppleRefresh :exec
+UPDATE auth_identities SET apple_refresh=NULL WHERE provider='apple' AND subject=$1;
+
 -- name: NativeUpdatePassword :exec
 UPDATE auth_identities SET password_hash=$2 WHERE provider='email' AND subject=$1;
 
@@ -100,3 +103,25 @@ SELECT user_id,family_id FROM auth_refresh_history WHERE refresh_hash=$1 AND exp
 
 -- name: NativeRevokeFamily :exec
 DELETE FROM auth_sessions WHERE family_id=$1;
+
+-- name: NativeAppleNotificationExists :one
+SELECT EXISTS(SELECT 1 FROM auth_apple_notifications WHERE id=$1);
+
+-- name: NativeInsertAppleNotification :exec
+INSERT INTO auth_apple_notifications(id,subject,event_type,issued_at,event_time)
+VALUES($1,$2,$3,$4,$5);
+
+-- name: NativeLatestAppleAccountEvent :one
+SELECT issued_at FROM auth_apple_notifications
+WHERE subject=$1 AND event_type IN ('consent-revoked','account-deleted')
+ORDER BY issued_at DESC
+LIMIT 1;
+
+-- name: NativeRememberAppleAuthentication :exec
+UPDATE auth_identities
+SET apple_authenticated_at=GREATEST(apple_authenticated_at, $2::timestamptz)
+WHERE provider='apple' AND subject=$1;
+
+-- name: NativeAppleAuthenticationAfter :one
+SELECT EXISTS(SELECT 1 FROM auth_identities
+WHERE provider='apple' AND subject=$1 AND apple_authenticated_at>$2::timestamptz);

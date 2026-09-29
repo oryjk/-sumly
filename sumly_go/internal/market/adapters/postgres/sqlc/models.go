@@ -8,6 +8,15 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AuthAppleNotification struct {
+	ID          string
+	Subject     string
+	EventType   string
+	IssuedAt    pgtype.Timestamptz
+	EventTime   int64
+	ProcessedAt pgtype.Timestamptz
+}
+
 type AuthChallenge struct {
 	ID        string
 	NonceHash string
@@ -23,11 +32,12 @@ type AuthCode struct {
 }
 
 type AuthIdentity struct {
-	UserID       int64
-	Provider     string
-	Subject      string
-	PasswordHash string
-	AppleRefresh []byte
+	UserID               int64
+	Provider             string
+	Subject              string
+	PasswordHash         string
+	AppleRefresh         []byte
+	AppleAuthenticatedAt pgtype.Timestamptz
 }
 
 type AuthQuota struct {

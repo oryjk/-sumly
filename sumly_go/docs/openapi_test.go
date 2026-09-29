@@ -19,9 +19,11 @@ func TestEmbeddedOpenAPISpecIsValid(t *testing.T) {
 	}
 	for _, path := range []string{
 		"/health",
+		"/api/v1/app/market/gold/history",
 		"/api/v1/app/auth/wechat/login",
 		"/api/v1/app/auth/apple/challenge",
 		"/api/v1/app/auth/apple/login",
+		"/api/v1/app/auth/apple/notifications",
 		"/api/v1/app/auth/phone/code",
 		"/api/v1/app/auth/phone/login",
 		"/api/v1/app/auth/email/code",

@@ -14,6 +14,7 @@ import (
 	"gitee.com/oryjk/sumly/sumly_go/internal/auth/adapters/wechat"
 	authapplication "gitee.com/oryjk/sumly/sumly_go/internal/auth/application"
 	"gitee.com/oryjk/sumly/sumly_go/internal/market/adapters/feed"
+	"gitee.com/oryjk/sumly/sumly_go/internal/market/adapters/historical"
 	markethttp "gitee.com/oryjk/sumly/sumly_go/internal/market/adapters/http"
 	marketpostgres "gitee.com/oryjk/sumly/sumly_go/internal/market/adapters/postgres"
 	"gitee.com/oryjk/sumly/sumly_go/internal/market/adapters/sge"
@@ -41,6 +42,7 @@ type Dependencies struct {
 	AppUsers        *userhttp.AppHandler
 	ActiveUsers     authhttp.ActiveUserChecker
 	GoldMarket      *markethttp.Handler
+	GoldHistory     *markethttp.HistoryHandler
 }
 
 func BuildDependencies(ctx context.Context, config Config) (Dependencies, func(), error) {
@@ -86,6 +88,12 @@ func BuildDependencies(ctx context.Context, config Config) (Dependencies, func()
 		return Dependencies{}, nil, fmt.Errorf("restore market history: %w", err)
 	}
 	goldMarketHandler := markethttp.NewHandler(goldMarketService)
+	annual, err := historical.AnnualGold()
+	if err != nil {
+		closePool()
+		return Dependencies{}, nil, err
+	}
+	historyHandler := markethttp.NewHistoryHandler(marketapplication.NewGoldHistory(goldMarketService, annual))
 
 	domesticQuote := sina.NewInstrumentClient(sinaClient, "gds_AU9999", "AU9999", "CNY")
 	londonSource := sina.NewInstrumentClient(sinaClient, "hf_XAU", "XAUUSD", "USD")
@@ -146,5 +154,6 @@ func BuildDependencies(ctx context.Context, config Config) (Dependencies, func()
 		AppUsers:        appUserHandler,
 		ActiveUsers:     appUserService,
 		GoldMarket:      goldMarketHandler,
+		GoldHistory:     historyHandler,
 	}, closeAll, nil
 }

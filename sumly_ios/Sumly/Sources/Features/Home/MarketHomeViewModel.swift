@@ -4,6 +4,7 @@ import Observation
 struct MarketChartPoint: Sendable, Equatable {
     let date: Date
     let price: Double
+    var granularity: GoldPointGranularity = .realtime
 }
 
 protocol GoldIntradayServicing: Sendable {
@@ -18,12 +19,19 @@ enum MarketRange: String, CaseIterable {
     case realtime = "实时"
     case month = "近一月"
     case quarter = "近三月"
+    case history = "1900年至今"
 }
 
 @MainActor @Observable
 final class MarketHomeViewModel {
-    var range: MarketRange = .realtime { didSet { selectedDate = nil } }
+    var range: MarketRange = .realtime { didSet { resetViewport() } }
     var selectedDate: Date?
+    private(set) var viewport: ClosedRange<Date>?
+    private var gestureViewport: ClosedRange<Date>?
+    private(set) var history: [GoldHistoryPoint] = []
+    private var historyFailed = false
+    private(set) var historyLoading = false
+    private let historyService: any GoldHistoryServicing
     private(set) var quote: GoldQuote?
     private(set) var daily: [GoldDailyPrice] = []
     private(set) var realtime: [MarketChartPoint] = []
@@ -37,7 +45,9 @@ final class MarketHomeViewModel {
 
     init(dailyService: any GoldPriceServicing = BackendGoldPriceService(),
          quoteService: any GoldQuoteServicing = BackendGoldPriceService(),
-         realtimeService: any GoldRealtimeServicing = BackendGoldPriceService()) {
+         realtimeService: any GoldRealtimeServicing = BackendGoldPriceService(),
+         historyService: any GoldHistoryServicing = BackendGoldPriceService()) {
+        self.historyService = historyService
         self.dailyService = dailyService
         self.quoteService = quoteService
         self.realtimeService = realtimeService
@@ -53,11 +63,18 @@ final class MarketHomeViewModel {
         guard let quote, let price, quote.usdCNY.isFinite, quote.usdCNY > 0 else { return [] }
         let factor = quote.usdCNY / 31.1034768
         var result: [MarketChartPoint]
-        do {
+        if range == .history {
+            // Preserve annual versus daily meaning; today's live quote is a separate observation.
+            result = history.filter { $0.date <= Date.now }.map {
+                MarketChartPoint(date: $0.date, price: $0.price * factor, granularity: $0.granularity)
+            }
+            guard !result.isEmpty else { return [] }
+            result.removeAll { $0.granularity == .daily && Calendar.current.isDate($0.date, inSameDayAs: quote.asOf) }
+        } else {
             let months = range == .month ? 1 : 3
             let cutoff = Calendar.current.date(byAdding: .month, value: -months, to: .now)!
             result = daily.filter { $0.date >= cutoff && $0.date <= Date.now }
-                .map { MarketChartPoint(date: $0.date, price: $0.close * factor) }
+                .map { MarketChartPoint(date: $0.date, price: $0.close * factor, granularity: .daily) }
             // 当日尚未收盘时，用当前报价代替日线中的当日收盘。
             result.removeAll { Calendar.current.isDate($0.date, inSameDayAs: quote.asOf) }
         }
@@ -76,7 +93,9 @@ final class MarketHomeViewModel {
         if loading { return "正在获取行情…" }
         if quoteFailed { return quote == nil ? "行情加载失败，点击重试" : "刷新失败，显示上次行情 · 点击重试" }
         if price == nil { return "人民币报价暂不可用 · 点击重试" }
-        if range == .realtime ? realtimeFailed : dailyFailed { return "走势刷新失败 · 点击重试" }
+        if range == .history && historyLoading { return "正在加载百年走势…" }
+        if range == .history && historyFailed { return "历史走势加载失败 · 点击重试" }
+        if range == .realtime ? realtimeFailed : (range == .history ? historyFailed : dailyFailed) { return "走势刷新失败 · 点击重试" }
         if let quote, Date.now.timeIntervalSince(quote.asOf) > 180 {
             return "最近报价 \(quote.asOf.formatted(.dateTime.month().day().hour().minute()))"
         }
@@ -107,9 +126,9 @@ final class MarketHomeViewModel {
     }
 
     var selectedPoint: MarketChartPoint? {
-        let values = points
-        guard let selectedDate, let first = values.first, let last = values.last,
-              selectedDate >= first.date, selectedDate <= last.date else { return nil }
+        let window = xDomain
+        let values = points.filter { window.contains($0.date) }
+        guard let selectedDate, window.contains(selectedDate) else { return nil }
         return values.min { abs($0.date.timeIntervalSince(selectedDate)) < abs($1.date.timeIntervalSince(selectedDate)) }
     }
 
@@ -121,7 +140,7 @@ final class MarketHomeViewModel {
             await loadQuote()
             tick += 1
             await loadRealtime()
-            if tick % 12 == 0 { await loadDaily() }
+            if tick % 12 == 0 { await loadDaily(); if range == .history { await loadHistory() } }
         }
     }
 
@@ -131,7 +150,55 @@ final class MarketHomeViewModel {
         async let d: Void = loadDaily()
         async let i: Void = loadRealtime()
         _ = await (q, d, i)
+        if range == .history { await loadHistory() }
         loading = false
+    }
+
+    var fullDomain: ClosedRange<Date> {
+        let values = points
+        let end = values.last?.date ?? .now
+        let start = range == .history ? GoldDailyPrice.parseDay("1900-01-01")! : (values.first?.date ?? end.addingTimeInterval(-1200))
+        return start...max(end, start.addingTimeInterval(1))
+    }
+    var xDomain: ClosedRange<Date> {
+        let bounds = fullDomain
+        guard let viewport else { return bounds }
+        return ChartViewport.pan(viewport, fraction: 0, bounds: bounds)
+    }
+    var visiblePoints: [MarketChartPoint] {
+        let values = points
+        let window = xDomain
+        // Adjacent actual points keep a clipped line continuous without making new observations.
+        let first = values.firstIndex { $0.date >= window.lowerBound } ?? values.count
+        let last = values.lastIndex { $0.date <= window.upperBound } ?? -1
+        let lower = max(0, first - 1)
+        let upper = min(values.count, last + 2)
+        guard lower < upper else { return [] }
+        return Array(values[lower..<upper])
+    }
+    func resetViewport() { viewport = nil; gestureViewport = nil; selectedDate = nil }
+    func beginChartGesture() { gestureViewport = xDomain; selectedDate = nil }
+    func transformChart(scale: Double, anchor: Double, translation: Double) {
+        guard let initial = gestureViewport else { return }
+        let focal = initial.lowerBound.addingTimeInterval(initial.upperBound.timeIntervalSince(initial.lowerBound) * anchor)
+        let minimum: TimeInterval = range == .realtime ? 30 : (focal < GoldDailyPrice.parseDay("2016-01-01")! ? 366 * 86400 : 7 * 86400)
+        let zoomed = ChartViewport.zoom(initial, scale: scale, anchor: anchor, bounds: fullDomain, minimumSpan: minimum)
+        viewport = ChartViewport.pan(zoomed, fraction: translation, bounds: fullDomain)
+        selectedDate = nil
+    }
+    func endChartGesture() { gestureViewport = nil }
+    func accessibleZoom(_ scale: Double) { beginChartGesture(); transformChart(scale: scale, anchor: 0.5, translation: 0); endChartGesture() }
+    func selectChart(at fraction: Double) {
+        guard gestureViewport == nil else { return }
+        let domain = xDomain
+        selectedDate = domain.lowerBound.addingTimeInterval(domain.upperBound.timeIntervalSince(domain.lowerBound) * min(1, max(0, fraction)))
+    }
+    func loadHistory() async {
+        guard !historyLoading else { return }
+        historyLoading = true
+        defer { historyLoading = false }
+        do { history = try await historyService.fetchHistory(); historyFailed = false }
+        catch { if !Task.isCancelled { historyFailed = true } }
     }
 
     private func loadQuote() async {

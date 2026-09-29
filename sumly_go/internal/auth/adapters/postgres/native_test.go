@@ -276,3 +276,93 @@ type fakeDelivery struct{ code string }
 
 func (*fakeDelivery) Enabled() bool                                     { return true }
 func (f *fakeDelivery) Send(_ context.Context, _, code, _ string) error { f.code = code; return nil }
+
+func TestAppleServerNotificationRevokesOrDeletesAccountIdempotently(t *testing.T) {
+	p := testsupport.OpenTestPostgres(t)
+	s := postgres.NewNativeStore(p)
+	ctx := context.Background()
+	base := time.Now().UTC().Truncate(time.Second)
+	newApple := func(subject, sessionID string, issuedAt time.Time) domain.User {
+		t.Helper()
+		u, err := s.Login(ctx, ports.LoginMutation{
+			Provider: "apple", Subject: subject, OpenID: "native-" + sessionID, AppleRefresh: []byte("encrypted-refresh"), ProviderIssuedAt: issuedAt,
+			Session: domain.Session{ID: sessionID, RefreshHash: "refresh-" + sessionID, AuthenticatedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour)},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return u
+	}
+
+	u := newApple("apple-consent", "consent-session", base.Add(-time.Minute))
+	revoke := domain.AppleNotification{ID: "evt-consent", Type: "consent-revoked", Subject: "apple-consent", IssuedAt: base, EventTime: base.UnixMilli()}
+	if err := s.ApplyAppleEvent(ctx, revoke); err != nil {
+		t.Fatal(err)
+	}
+	var storedEventID, storedSubject string
+	if err := p.QueryRow(ctx, "SELECT id, subject FROM auth_apple_notifications WHERE event_type=$1", "consent-revoked").Scan(&storedEventID, &storedSubject); err != nil {
+		t.Fatal(err)
+	}
+	if storedEventID == revoke.ID || storedSubject == revoke.Subject {
+		t.Fatal("raw Apple notification identifiers persisted")
+	}
+	if _, _, err := s.Session(ctx, "consent-session"); err == nil {
+		t.Fatal("consent-revoked left session alive")
+	}
+	identity, err := s.FindIdentity(ctx, "apple", "apple-consent")
+	if err != nil || identity.User.ID != u.ID || len(identity.AppleRefresh) != 0 {
+		t.Fatalf("identity after revoke = %+v err=%v", identity, err)
+	}
+
+	// A fresh Apple credential issued after the event may reauthenticate.
+	newApple("apple-consent", "after-consent", base.Add(time.Minute))
+	// Redelivery of the same notification must not revoke the newly established session.
+	if err := s.ApplyAppleEvent(ctx, revoke); err != nil {
+		t.Fatal("repeat revoke must be idempotent", err)
+	}
+	if _, _, err := s.Session(ctx, "after-consent"); err != nil {
+		t.Fatal("redelivery revoked fresh session", err)
+	}
+
+	// A distinct notification that was signed before the newer Apple login but delivered later is stale too.
+	delayedOld := domain.AppleNotification{ID: "evt-consent-delayed", Type: "consent-revoked", Subject: "apple-consent", IssuedAt: base.Add(-30 * time.Second), EventTime: base.Add(-30 * time.Second).UnixMilli()}
+	if err := s.ApplyAppleEvent(ctx, delayedOld); err != nil {
+		t.Fatal("delayed old notification", err)
+	}
+	if _, _, err := s.Session(ctx, "after-consent"); err != nil {
+		t.Fatal("older first-delivery notification revoked newer login", err)
+	}
+
+	// A login whose Apple credential predates the latest destructive notification must not land after it.
+	if _, err := s.Login(ctx, ports.LoginMutation{
+		Provider: "apple", Subject: "apple-consent", OpenID: "stale-openid", AppleRefresh: []byte("stale"), ProviderIssuedAt: base.Add(-time.Second),
+		Session: domain.Session{ID: "stale-session", RefreshHash: "stale-refresh", AuthenticatedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour)},
+	}); !errors.Is(err, domain.ErrCredentials) {
+		t.Fatalf("stale Apple login accepted: %v", err)
+	}
+
+	deleted := newApple("apple-deleted", "deleted-session", base.Add(-time.Minute))
+	deletion := domain.AppleNotification{ID: "evt-delete", Type: "account-deleted", Subject: "apple-deleted", IssuedAt: base, EventTime: base.UnixMilli()}
+	if err := s.ApplyAppleEvent(ctx, deletion); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.FindIdentity(ctx, "apple", "apple-deleted"); err == nil {
+		t.Fatal("deleted Apple identity remains")
+	}
+	var count int
+	if err := p.QueryRow(ctx, "SELECT count(*) FROM users WHERE id=$1", deleted.ID).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("deleted user count=%d err=%v", count, err)
+	}
+
+	// Recreate after Apple issues a newer credential; replaying the old deletion must not delete it again.
+	recreated := newApple("apple-deleted", "recreated-session", base.Add(time.Minute))
+	if err := s.ApplyAppleEvent(ctx, deletion); err != nil {
+		t.Fatal("repeat deletion must be idempotent", err)
+	}
+	if _, _, err := s.Session(ctx, "recreated-session"); err != nil {
+		t.Fatal("replayed deletion removed recreated session", err)
+	}
+	if got, err := s.FindIdentity(ctx, "apple", "apple-deleted"); err != nil || got.User.ID != recreated.ID {
+		t.Fatalf("recreated identity lost: %+v %v", got, err)
+	}
+}

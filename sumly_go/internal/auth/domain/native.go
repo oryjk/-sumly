@@ -81,6 +81,13 @@ type Challenge struct {
 	Nonce     string `json:"nonce"`
 	ExpiresIn int    `json:"expires_in"`
 }
+type AppleNotification struct {
+	ID        string    `json:"-"`
+	Type      string    `json:"type"`
+	Subject   string    `json:"sub"`
+	EventTime int64     `json:"event_time"`
+	IssuedAt  time.Time `json:"-"`
+}
 type Quota struct {
 	Key    string
 	Limit  int

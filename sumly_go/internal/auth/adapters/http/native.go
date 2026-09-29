@@ -38,6 +38,10 @@ type nativeRequest struct {
 	Confirmation  string `json:"confirmation"`
 }
 
+type appleNotificationRequest struct {
+	Payload string `json:"payload"`
+}
+
 func nativeError(c *gin.Context, e error) {
 	status := 503
 	message := "authentication temporarily unavailable"
@@ -63,6 +67,7 @@ func nativeError(c *gin.Context, e error) {
 }
 func (h *NativeHandler) RegisterRoutes(g *gin.RouterGroup) {
 	g.GET("/auth/capabilities", func(c *gin.Context) { c.JSON(200, sharedhttp.Success(h.accounts.Capabilities())) })
+	g.POST("/auth/apple/notifications", h.appleNotification)
 	for _, path := range []string{"apple/challenge", "apple/login", "phone/code", "phone/login", "email/code", "email/register", "email/login", "email/reset-password", "refresh", "logout"} {
 		g.POST("/auth/"+path, h.endpoint(path))
 	}
@@ -145,4 +150,30 @@ func (h *NativeHandler) endpoint(path string) gin.HandlerFunc {
 		}
 		c.JSON(200, sharedhttp.Success(data))
 	}
+}
+
+func (h *NativeHandler) appleNotification(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
+	defer cancel()
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 32768)
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	var req appleNotificationRequest
+	if err := decoder.Decode(&req); err != nil {
+		nativeError(c, domain.ErrInvalid)
+		return
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		nativeError(c, domain.ErrInvalid)
+		return
+	}
+	if req.Payload == "" || len(req.Payload) > 16384 {
+		nativeError(c, domain.ErrInvalid)
+		return
+	}
+	if err := h.accounts.HandleAppleNotification(ctx, req.Payload); err != nil {
+		nativeError(c, err)
+		return
+	}
+	c.Status(http.StatusOK)
 }

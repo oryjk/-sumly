@@ -57,3 +57,21 @@ import Foundation
         try BackendGoldPriceService.decodeQuote(dto)
     }
 }
+
+@Test func historyDecodesAnnualAndDailyPointsWithoutInventingOHLC() throws {
+    let json = #"{"unit":"USD/troy_oz","points":[{"date":"1900-07-01","price":18.94,"granularity":"annual","source":"usgs-ds140"},{"date":"2015-07-01","price":1163,"granularity":"annual","source":"usgs-ds140"},{"date":"2016-01-04","price":1074,"granularity":"daily","source":"sina-xauusd"}]}"#
+    let dto = try JSONDecoder().decode(BackendGoldPriceService.HistoryDTO.self, from: Data(json.utf8))
+    let values = try BackendGoldPriceService.decodeHistory(dto)
+    #expect(values.count == 3)
+    #expect(values.first?.granularity == .annual)
+    #expect(values.last?.granularity == .daily)
+    #expect(values.first?.source == "usgs-ds140")
+}
+
+@Test func historyRejectsWrongUnitsAndOverlappingGranularities() throws {
+    for (unit, date, granularity) in [("CNY/g", "1900-07-01", "annual"), ("USD/troy_oz", "2016-07-01", "annual"), ("USD/troy_oz", "2015-12-31", "daily")] {
+        let json = "{\"unit\":\"\(unit)\",\"points\":[{\"date\":\"\(date)\",\"price\":10,\"granularity\":\"\(granularity)\",\"source\":\"test\"}]}"
+        let dto = try JSONDecoder().decode(BackendGoldPriceService.HistoryDTO.self, from: Data(json.utf8))
+        #expect(throws: BackendGoldPriceService.ServiceError.malformedPayload) { try BackendGoldPriceService.decodeHistory(dto) }
+    }
+}

@@ -58,7 +58,7 @@ func TestAppleVerifiesBothTokensAndNonce(t *testing.T) {
 	})}
 	a := NewApple(AppleConfig{ClientID: "app.id", TeamID: "team", KeyID: "key", PrivateKey: signer}, client, crypto)
 	got, e := a.Verify(context.Background(), sign(nil), "auth-code", crypto.Digest("apple-nonce", "nonce"))
-	if e != nil || got.Subject != "subject" || got.RefreshToken != "apple-refresh" {
+	if e != nil || got.Subject != "subject" || got.RefreshToken != "apple-refresh" || got.IssuedAt.IsZero() {
 		t.Fatal(got, e)
 	}
 	for _, bad := range []jwt.MapClaims{{"iss": "evil"}, {"aud": "other"}, {"nonce": "wrong"}, {"exp": time.Now().Add(-time.Minute).Unix()}, {"iat": time.Now().Add(time.Hour).Unix()}, {"sub": ""}} {

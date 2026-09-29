@@ -103,6 +103,34 @@ func (q *Queries) NativeActivateCode(ctx context.Context, arg NativeActivateCode
 	return result.RowsAffected(), nil
 }
 
+const nativeAppleAuthenticationAfter = `-- name: NativeAppleAuthenticationAfter :one
+SELECT EXISTS(SELECT 1 FROM auth_identities
+WHERE provider='apple' AND subject=$1 AND apple_authenticated_at>$2::timestamptz)
+`
+
+type NativeAppleAuthenticationAfterParams struct {
+	Subject string             `json:"subject"`
+	Column2 pgtype.Timestamptz `json:"column_2"`
+}
+
+func (q *Queries) NativeAppleAuthenticationAfter(ctx context.Context, arg NativeAppleAuthenticationAfterParams) (bool, error) {
+	row := q.db.QueryRow(ctx, nativeAppleAuthenticationAfter, arg.Subject, arg.Column2)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const nativeAppleNotificationExists = `-- name: NativeAppleNotificationExists :one
+SELECT EXISTS(SELECT 1 FROM auth_apple_notifications WHERE id=$1)
+`
+
+func (q *Queries) NativeAppleNotificationExists(ctx context.Context, id string) (bool, error) {
+	row := q.db.QueryRow(ctx, nativeAppleNotificationExists, id)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const nativeAttemptCode = `-- name: NativeAttemptCode :one
 UPDATE auth_codes SET attempts=attempts+1 WHERE key=$1 AND active AND expires_at>now() AND attempts<5
 RETURNING hash
@@ -125,6 +153,15 @@ s AS (DELETE FROM auth_sessions WHERE expires_at<now()) SELECT 1
 
 func (q *Queries) NativeCleanup(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, nativeCleanup)
+	return err
+}
+
+const nativeClearAppleRefresh = `-- name: NativeClearAppleRefresh :exec
+UPDATE auth_identities SET apple_refresh=NULL WHERE provider='apple' AND subject=$1
+`
+
+func (q *Queries) NativeClearAppleRefresh(ctx context.Context, subject string) error {
+	_, err := q.db.Exec(ctx, nativeClearAppleRefresh, subject)
 	return err
 }
 
@@ -167,7 +204,7 @@ func (q *Queries) NativeDeleteUser(ctx context.Context, id int64) error {
 }
 
 const nativeIdentity = `-- name: NativeIdentity :one
-SELECT i.user_id, i.provider, i.subject, i.password_hash, i.apple_refresh,u.nickname,COALESCE(u.avatar_url,'')::text AS avatar_url,u.status FROM auth_identities i JOIN users u ON u.id=i.user_id WHERE provider=$1 AND subject=$2
+SELECT i.user_id, i.provider, i.subject, i.password_hash, i.apple_refresh, i.apple_authenticated_at,u.nickname,COALESCE(u.avatar_url,'')::text AS avatar_url,u.status FROM auth_identities i JOIN users u ON u.id=i.user_id WHERE provider=$1 AND subject=$2
 `
 
 type NativeIdentityParams struct {
@@ -176,14 +213,15 @@ type NativeIdentityParams struct {
 }
 
 type NativeIdentityRow struct {
-	UserID       int64  `json:"user_id"`
-	Provider     string `json:"provider"`
-	Subject      string `json:"subject"`
-	PasswordHash string `json:"password_hash"`
-	AppleRefresh []byte `json:"apple_refresh"`
-	Nickname     string `json:"nickname"`
-	AvatarUrl    string `json:"avatar_url"`
-	Status       string `json:"status"`
+	UserID               int64              `json:"user_id"`
+	Provider             string             `json:"provider"`
+	Subject              string             `json:"subject"`
+	PasswordHash         string             `json:"password_hash"`
+	AppleRefresh         []byte             `json:"apple_refresh"`
+	AppleAuthenticatedAt pgtype.Timestamptz `json:"apple_authenticated_at"`
+	Nickname             string             `json:"nickname"`
+	AvatarUrl            string             `json:"avatar_url"`
+	Status               string             `json:"status"`
 }
 
 func (q *Queries) NativeIdentity(ctx context.Context, arg NativeIdentityParams) (NativeIdentityRow, error) {
@@ -195,11 +233,36 @@ func (q *Queries) NativeIdentity(ctx context.Context, arg NativeIdentityParams) 
 		&i.Subject,
 		&i.PasswordHash,
 		&i.AppleRefresh,
+		&i.AppleAuthenticatedAt,
 		&i.Nickname,
 		&i.AvatarUrl,
 		&i.Status,
 	)
 	return i, err
+}
+
+const nativeInsertAppleNotification = `-- name: NativeInsertAppleNotification :exec
+INSERT INTO auth_apple_notifications(id,subject,event_type,issued_at,event_time)
+VALUES($1,$2,$3,$4,$5)
+`
+
+type NativeInsertAppleNotificationParams struct {
+	ID        string             `json:"id"`
+	Subject   string             `json:"subject"`
+	EventType string             `json:"event_type"`
+	IssuedAt  pgtype.Timestamptz `json:"issued_at"`
+	EventTime int64              `json:"event_time"`
+}
+
+func (q *Queries) NativeInsertAppleNotification(ctx context.Context, arg NativeInsertAppleNotificationParams) error {
+	_, err := q.db.Exec(ctx, nativeInsertAppleNotification,
+		arg.ID,
+		arg.Subject,
+		arg.EventType,
+		arg.IssuedAt,
+		arg.EventTime,
+	)
+	return err
 }
 
 const nativeInsertIdentity = `-- name: NativeInsertIdentity :exec
@@ -250,6 +313,20 @@ func (q *Queries) NativeInsertSession(ctx context.Context, arg NativeInsertSessi
 		arg.FamilyID,
 	)
 	return err
+}
+
+const nativeLatestAppleAccountEvent = `-- name: NativeLatestAppleAccountEvent :one
+SELECT issued_at FROM auth_apple_notifications
+WHERE subject=$1 AND event_type IN ('consent-revoked','account-deleted')
+ORDER BY issued_at DESC
+LIMIT 1
+`
+
+func (q *Queries) NativeLatestAppleAccountEvent(ctx context.Context, subject string) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, nativeLatestAppleAccountEvent, subject)
+	var issued_at pgtype.Timestamptz
+	err := row.Scan(&issued_at)
+	return issued_at, err
 }
 
 const nativeLock = `-- name: NativeLock :exec
@@ -341,6 +418,22 @@ func (q *Queries) NativeRefreshFamily(ctx context.Context, refreshHash string) (
 	var i NativeRefreshFamilyRow
 	err := row.Scan(&i.UserID, &i.FamilyID)
 	return i, err
+}
+
+const nativeRememberAppleAuthentication = `-- name: NativeRememberAppleAuthentication :exec
+UPDATE auth_identities
+SET apple_authenticated_at=GREATEST(apple_authenticated_at, $2::timestamptz)
+WHERE provider='apple' AND subject=$1
+`
+
+type NativeRememberAppleAuthenticationParams struct {
+	Subject string             `json:"subject"`
+	Column2 pgtype.Timestamptz `json:"column_2"`
+}
+
+func (q *Queries) NativeRememberAppleAuthentication(ctx context.Context, arg NativeRememberAppleAuthenticationParams) error {
+	_, err := q.db.Exec(ctx, nativeRememberAppleAuthentication, arg.Subject, arg.Column2)
+	return err
 }
 
 const nativeRememberRefresh = `-- name: NativeRememberRefresh :exec

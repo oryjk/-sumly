@@ -23,9 +23,11 @@ type NativeStore interface {
 	Session(context.Context, string) (domain.Session, domain.User, error)
 	Logout(context.Context, string) error
 	Delete(context.Context, string, func(context.Context, []byte) error) error
+	ApplyAppleEvent(context.Context, domain.AppleNotification) error
 }
 type LoginMutation struct {
 	Provider, Subject, Nickname, PasswordHash, ExpectedPassword, CodeKey, CodeHash, OpenID string
+	ProviderIssuedAt                                                                       time.Time
 	AppleRefresh                                                                           []byte
 	Session                                                                                domain.Session
 	Register                                                                               bool
@@ -46,9 +48,13 @@ type CodeSender interface {
 	Enabled() bool
 	Send(context.Context, string, string, string) error
 }
-type AppleIdentity struct{ Subject, RefreshToken string }
+type AppleIdentity struct {
+	Subject, RefreshToken string
+	IssuedAt              time.Time
+}
 type AppleGateway interface {
 	Enabled() bool
 	Verify(context.Context, string, string, string) (AppleIdentity, error)
 	Revoke(context.Context, string) error
+	VerifyNotification(context.Context, string) (domain.AppleNotification, error)
 }

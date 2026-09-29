@@ -2,7 +2,7 @@ import Foundation
 
 /// sumly_go 后端行情接口适配（`/api/v1/app/market/gold/*`）。
 /// 行情抓取与缓存由后端负责；这里只消费 `{ code, message, data }` envelope。
-struct BackendGoldPriceService: GoldPriceServicing, GoldQuoteServicing, GoldIntradayServicing, GoldRealtimeServicing {
+struct BackendGoldPriceService: GoldPriceServicing, GoldQuoteServicing, GoldIntradayServicing, GoldRealtimeServicing, GoldHistoryServicing {
     /// 默认走线上 nginx 反代（`https://oryjk.cn/sumly/`，jd 部署）；
     /// 本地联调可在 Info.plist 用 SUMLY_API_BASE_URL 覆盖（如 http://127.0.0.1:18090/api/v1）。
     static let defaultBaseURL: URL = {
@@ -69,6 +69,36 @@ struct BackendGoldPriceService: GoldPriceServicing, GoldQuoteServicing, GoldIntr
     func fetchDailyPrices() async throws -> [GoldDailyPrice] {
         let daily: DailyDTO = try await get("app/market/gold/daily")
         return try Self.decodeDailyBars(daily.bars)
+    }
+
+    struct HistoryDTO: Decodable {
+        let unit: String
+        let points: [HistoryPointDTO]
+    }
+    struct HistoryPointDTO: Decodable {
+        let date: String
+        let price: Double
+        let granularity: GoldPointGranularity
+        let source: String
+    }
+    func fetchHistory() async throws -> [GoldHistoryPoint] {
+        let dto: HistoryDTO = try await get("app/market/gold/history")
+        return try Self.decodeHistory(dto)
+    }
+    static func decodeHistory(_ dto: HistoryDTO) throws -> [GoldHistoryPoint] {
+        guard dto.unit == "USD/troy_oz" else { throw ServiceError.malformedPayload }
+        var dates = Set<Date>()
+        let points = try dto.points.map { point in
+            guard let date = GoldDailyPrice.parseDay(point.date), point.price.isFinite, point.price > 0,
+                  dates.insert(date).inserted,
+                  (point.granularity == .annual && point.date >= "1900-01-01" && point.date < "2016-01-01") ||
+                  (point.granularity == .daily && point.date >= "2016-01-01") else {
+                throw ServiceError.malformedPayload
+            }
+            return GoldHistoryPoint(date: date, price: point.price, granularity: point.granularity, source: point.source)
+        }.sorted { $0.date < $1.date }
+        guard !points.isEmpty else { throw ServiceError.emptyData }
+        return points
     }
 
     // MARK: - GoldQuoteServicing
