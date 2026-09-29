@@ -13,3 +13,5 @@ Release target 0.1.1 (9). Client-only; backend unchanged.
 Released: implementation `28f0d6a` pushed to origin/main. Production archive 0.1.1 (9), com.oryjk.sumly. App Store Connect upload succeeded at 2026-09-29 19:12:17 +0800 (`build/upload-b9.log`, EXPORT SUCCEEDED), package processing pending. Screenshot: `sumly_ios/build/window-stats-pan.png`.
 
 Follow-ups: fixed the summary to a separate row for every range (commit `7099703`); 0.1.1 (10) upload succeeded at 2026-09-29 19:21:22 +0800. Added dates beneath high/low prices using the same `pointLabel` formatting as chart inspection; enlarged badges to 40pt and separation to 46pt. Updated collision test first (red), then all 106 tests passed (`build/extrema-date-green.log`). Native Simulator verified readable price/date badges at both chart edges. Included in build 11 with the fixed summary row.
+
+Build 11 release: implementation `825e5c6` pushed. Initial upload stopped progressing during analysis transmission and was interrupted; retry succeeded at 2026-09-29 19:28:39 +0800 (`build/upload-b11-retry.log`, EXPORT SUCCEEDED). 0.1.1 (11) is processing in App Store Connect.
