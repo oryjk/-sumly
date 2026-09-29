@@ -37,9 +37,9 @@ private struct HomeMarketFixture: GoldPriceServicing, GoldQuoteServicing, GoldRe
     let model = MarketHomeViewModel(dailyService: service, quoteService: service, realtimeService: service)
     await model.refresh()
     model.range = .month
-    #expect(model.points.count == 2)
+    #expect(model.windowPoints.count == 1)
     model.range = .quarter
-    #expect(model.points.count == 3)
+    #expect(model.windowPoints.count == 2)
 }
 
 @MainActor @Test func homeNetworkFailureDoesNotDisplayReferencePrice() async {
@@ -137,7 +137,7 @@ private struct HomeHistoryFixture: GoldHistoryServicing {
     let model = MarketHomeViewModel(dailyService: service, quoteService: service, realtimeService: service, historyService: HomeHistoryFixture())
     model.range = .history
     await model.refresh()
-    #expect(model.points.count == 4)
+    #expect(model.points.count == 3)
     #expect(model.points.first?.granularity == .annual)
     #expect(abs(model.points[0].price - 19 * 7 / 31.1034768) < 0.000001)
     #expect(model.fullDomain.lowerBound == GoldDailyPrice.parseDay("1900-01-01"))
@@ -192,4 +192,69 @@ private actor AdvancingRealtimeFixture: GoldRealtimeServicing {
     #expect(model.xDomain.lowerBound >= model.fullDomain.lowerBound)
     #expect(model.xDomain.upperBound.timeIntervalSince(model.xDomain.lowerBound) == 30)
     #expect(model.visiblePoints.contains { model.xDomain.contains($0.date) })
+}
+
+@MainActor @Test func nonRealtimeChartUsesDayAlignedDatesAndCanLeavePreset() async {
+    let service = HomeMarketFixture()
+    let model = MarketHomeViewModel(dailyService: service, quoteService: service, realtimeService: service, historyService: HomeHistoryFixture())
+    model.range = .month
+    await model.refresh()
+    #expect(model.points.allSatisfy { Calendar.current.component(.hour, from: $0.date) == 12 && Calendar.current.component(.second, from: $0.date) == 0 })
+    let preset = model.xDomain
+    model.beginNavigatorGesture()
+    model.moveNavigator(part: .window, fraction: -0.5)
+    model.endChartGesture()
+    #expect(model.xDomain.upperBound < preset.lowerBound)
+    #expect(Calendar.current.dateComponents([.day], from: model.xDomain.lowerBound, to: model.xDomain.upperBound).day == Calendar.current.dateComponents([.day], from: preset.lowerBound, to: preset.upperBound).day)
+    model.resetViewport()
+    #expect(model.xDomain == preset)
+}
+@MainActor @Test func dailyZoomAndDateSelectionNeverCreateSecondScaleWindows() async {
+    let service = HomeMarketFixture()
+    let model = MarketHomeViewModel(dailyService: service, quoteService: service, realtimeService: service, historyService: HomeHistoryFixture())
+    model.range = .quarter
+    await model.refresh()
+    model.accessibleZoom(100000)
+    #expect(Calendar.current.dateComponents([.day], from: model.xDomain.lowerBound, to: model.xDomain.upperBound).day! >= 1)
+    #expect(Calendar.current.component(.hour, from: model.xDomain.lowerBound) == 12)
+    #expect(Calendar.current.component(.second, from: model.xDomain.upperBound) == 0)
+    #expect(model.axisDates.allSatisfy { Calendar.current.component(.hour, from: $0) == 12 })
+}
+
+private struct ClosedDayHistoryFixture: GoldHistoryServicing {
+    func fetchHistory() async throws -> [GoldHistoryPoint] {
+        [-2, -1, 0].map { offset in
+            GoldHistoryPoint(date: Calendar.current.date(byAdding: .day, value: offset, to: ChartViewport.noon(.now))!, price: Double(3000 + offset), granularity: .daily, source: "test")
+        }
+    }
+}
+@MainActor @Test func nonRealtimeChartStopsYesterdayAndNeverAppendsLiveQuote() async {
+    let service = HomeMarketFixture()
+    let model = MarketHomeViewModel(dailyService: service, quoteService: service, realtimeService: service, historyService: ClosedDayHistoryFixture())
+    for range in [MarketRange.month, .quarter, .history] {
+        model.range = range
+        await model.refresh()
+        let yesterday = ChartViewport.noon(Calendar.current.date(byAdding: .day, value: -1, to: .now)!)
+        #expect(model.points.count == 2)
+        #expect(model.points.last?.date == yesterday)
+        #expect(model.fullDomain.upperBound == yesterday)
+        #expect(model.points.allSatisfy { $0.granularity == .daily })
+    }
+}
+
+private struct YesterdayOnlyFixture: GoldPriceServicing {
+    func fetchDailyPrices() async throws -> [GoldDailyPrice] {
+        let yesterday = ChartViewport.noon(Calendar.current.date(byAdding: .day, value: -1, to: .now)!)
+        return [GoldDailyPrice(date: yesterday, open: 3000, high: 3000, low: 3000, close: 3000)]
+    }
+}
+@MainActor @Test func singleYesterdayObservationNeverExtendsDomainIntoToday() async {
+    let service = HomeMarketFixture()
+    let model = MarketHomeViewModel(dailyService: YesterdayOnlyFixture(), quoteService: service, realtimeService: service, historyService: HomeHistoryFixture(failing: true))
+    model.range = .month
+    await model.refresh()
+    let yesterday = ChartViewport.noon(Calendar.current.date(byAdding: .day, value: -1, to: .now)!)
+    #expect(model.fullDomain.upperBound == yesterday)
+    #expect(model.fullDomain.lowerBound < yesterday)
+    #expect(model.xDomain.upperBound == yesterday)
 }

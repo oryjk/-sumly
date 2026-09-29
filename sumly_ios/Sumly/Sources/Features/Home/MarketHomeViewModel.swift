@@ -62,30 +62,22 @@ final class MarketHomeViewModel {
 
     var points: [MarketChartPoint] {
         if range == .realtime { return Self.realtimeWindow(realtime, now: .now) }
-        guard let quote, let price, quote.usdCNY.isFinite, quote.usdCNY > 0 else { return [] }
+        guard let quote, quote.usdCNY.isFinite, quote.usdCNY > 0 else { return [] }
         let factor = quote.usdCNY / 31.1034768
+        let lastDay = ChartViewport.noon(Calendar.current.date(byAdding: .day, value: -1, to: .now)!)
         var result: [MarketChartPoint]
-        if range == .history {
-            // Preserve annual versus daily meaning; today's live quote is a separate observation.
-            result = history.filter { $0.date <= Date.now }.map {
-                MarketChartPoint(date: $0.date, price: $0.price * factor, granularity: $0.granularity)
+        if !history.isEmpty {
+            result = history.filter { ChartViewport.noon($0.date) <= lastDay }.map {
+                MarketChartPoint(date: ChartViewport.noon($0.date), price: $0.price * factor, granularity: $0.granularity)
             }
-            guard !result.isEmpty else { return [] }
-            result.removeAll { $0.granularity == .daily && Calendar.current.isDate($0.date, inSameDayAs: quote.asOf) }
         } else {
-            let months = range == .month ? 1 : 3
-            let cutoff = Calendar.current.date(byAdding: .month, value: -months, to: .now)!
-            result = daily.filter { $0.date >= cutoff && $0.date <= Date.now }
-                .map { MarketChartPoint(date: $0.date, price: $0.close * factor, granularity: .daily) }
-            // 当日尚未收盘时，用当前报价代替日线中的当日收盘。
-            result.removeAll { Calendar.current.isDate($0.date, inSameDayAs: quote.asOf) }
+            if range == .history { return [] }
+            result = daily.filter { ChartViewport.noon($0.date) <= lastDay }.map {
+                MarketChartPoint(date: ChartViewport.noon($0.date), price: $0.close * factor, granularity: .daily)
+            }
         }
+        guard !result.isEmpty else { return [] }
         result = result.filter { $0.price.isFinite && $0.price > 0 }.sorted { $0.date < $1.date }
-        if let last = result.last, last.date == quote.asOf {
-            result[result.count - 1] = MarketChartPoint(date: quote.asOf, price: price)
-        } else if result.last.map({ $0.date < quote.asOf }) ?? true {
-            result.append(MarketChartPoint(date: quote.asOf, price: price))
-        }
         return result
     }
 
@@ -142,7 +134,7 @@ final class MarketHomeViewModel {
             await loadQuote()
             tick += 1
             await loadRealtime()
-            if tick % 12 == 0 { await loadDaily(); if range == .history { await loadHistory() } }
+            if tick % 12 == 0 { await loadDaily(); if range != .realtime { await loadHistory() } }
         }
     }
 
@@ -152,20 +144,47 @@ final class MarketHomeViewModel {
         async let d: Void = loadDaily()
         async let i: Void = loadRealtime()
         _ = await (q, d, i)
-        if range == .history { await loadHistory() }
+        if range != .realtime { await loadHistory() }
         loading = false
     }
 
     var fullDomain: ClosedRange<Date> {
         let values = points
-        let end = values.last?.date ?? .now
-        let start = range == .history ? GoldDailyPrice.parseDay("1900-01-01")! : (values.first?.date ?? end.addingTimeInterval(-1200))
-        return start...max(end, start.addingTimeInterval(1))
+        if range == .realtime {
+            let end = values.last?.date ?? .now
+            let start = values.first?.date ?? end.addingTimeInterval(-1200)
+            return start...max(end, start.addingTimeInterval(1))
+        }
+        let end = ChartViewport.noon(Calendar.current.date(byAdding: .day, value: -1, to: .now)!)
+        let start = history.isEmpty ? (values.first?.date ?? Calendar.current.date(byAdding: .day, value: -1, to: end)!) : GoldDailyPrice.parseDay("1900-01-01")!
+        return min(start, Calendar.current.date(byAdding: .day, value: -1, to: end)!)...end
+    }
+    var presetDomain: ClosedRange<Date> {
+        let bounds = fullDomain
+        guard range == .month || range == .quarter else { return bounds }
+        let start = Calendar.current.date(byAdding: .month, value: range == .month ? -1 : -3, to: bounds.upperBound)!
+        return ChartViewport.dayAligned(start...bounds.upperBound, bounds: bounds)
     }
     var xDomain: ClosedRange<Date> {
+        guard let viewport else { return presetDomain }
         let bounds = fullDomain
-        guard let viewport else { return bounds }
-        return ChartViewport.pan(viewport, fraction: 0, bounds: bounds)
+        if range == .realtime { return ChartViewport.pan(viewport, fraction: 0, bounds: bounds) }
+        return ChartViewport.dayAligned(viewport, bounds: bounds)
+    }
+    var windowPoints: [MarketChartPoint] {
+        let window = xDomain
+        return points.filter { window.contains($0.date) }
+    }
+    var canReset: Bool { xDomain != presetDomain }
+    var axisDates: [Date] {
+        let window = xDomain
+        if range == .realtime {
+            let span = window.upperBound.timeIntervalSince(window.lowerBound)
+            return (0...3).map { window.lowerBound.addingTimeInterval(span * Double($0) / 3) }
+        }
+        let days = Calendar.current.dateComponents([.day], from: window.lowerBound, to: window.upperBound).day ?? 1
+        let offsets = Set((0...3).map { Int((Double(days) * Double($0) / 3).rounded()) })
+        return offsets.sorted().map { Calendar.current.date(byAdding: .day, value: $0, to: window.lowerBound)! }
     }
     var visiblePoints: [MarketChartPoint] {
         let values = points
@@ -183,9 +202,19 @@ final class MarketHomeViewModel {
     func transformChart(scale: Double, anchor: Double, translation: Double) {
         guard let initial = gestureViewport else { return }
         let focal = initial.lowerBound.addingTimeInterval(initial.upperBound.timeIntervalSince(initial.lowerBound) * anchor)
-        let minimum: TimeInterval = range == .realtime ? 30 : (focal < GoldDailyPrice.parseDay("2016-01-01")! ? 366 * 86400 : 7 * 86400)
+        let minimum: TimeInterval = range == .realtime ? 30 : (focal < GoldDailyPrice.parseDay("2016-01-01")! ? 366 * 86400 : 86400)
         let zoomed = ChartViewport.zoom(initial, scale: scale, anchor: anchor, bounds: fullDomain, minimumSpan: minimum)
-        viewport = ChartViewport.pan(zoomed, fraction: translation, bounds: fullDomain)
+        let moved = ChartViewport.pan(zoomed, fraction: translation, bounds: fullDomain)
+        viewport = range == .realtime ? moved : ChartViewport.dayAligned(moved, bounds: fullDomain)
+        selectedDate = nil
+    }
+    func beginNavigatorGesture() { gestureViewport = xDomain; selectedDate = nil }
+    func moveNavigator(part: ChartViewport.Part, fraction: Double) {
+        guard let initial = gestureViewport else { return }
+        viewport = ChartViewport.navigate(initial, part: part, fraction: fraction, bounds: fullDomain, daily: range != .realtime)
+    }
+    func setDateWindow(_ window: ClosedRange<Date>) {
+        viewport = ChartViewport.dayAligned(window, bounds: fullDomain)
         selectedDate = nil
     }
     func endChartGesture() { gestureViewport = nil }

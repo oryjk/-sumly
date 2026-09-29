@@ -7,6 +7,7 @@ struct HomeView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var showingNotice = false
     @State private var showingHistorySources = false
+    @State private var showingDates = false
 
     var body: some View {
         Group {
@@ -21,7 +22,10 @@ struct HomeView: View {
             if scenePhase == .active { await model.start() }
         }
         .task(id: model.range) {
-            if model.range == .history { await model.loadHistory() }
+            if model.range != .realtime { await model.loadHistory() }
+        }
+        .sheet(isPresented: $showingDates) {
+            ChartDateRangeSheet(bounds: model.fullDomain, window: model.xDomain, apply: model.setDateWindow)
         }
         .sheet(isPresented: $showingHistorySources) {
             NavigationStack {
@@ -31,7 +35,7 @@ struct HomeView: View {
                         Text("来源为 USGS Data Series 140 的名义美元金价统计，按每吨换算为每金衡盎司。1900–1967 年依据世界市场均价，1968 年起依据 Engelhard 年均报价；不是同一市场的逐日收盘序列。年度点仅用当年 7 月定位。")
                         Link("查看 USGS 原始资料", destination: URL(string: "https://www.usgs.gov/media/files/gold-historical-statistics-data-series-140")!)
                         Text("2016 年起 · 每日收盘价").font(.headline)
-                        Text("来源为新浪伦敦金日线，仅展示来源已有的交易日。当天未收盘时标为实时报价。周末、休市及缺失数据不补点。")
+                        Text("来源为新浪伦敦金日线，仅展示截至昨天已有的交易日收盘数据。当天报价仅在实时走势中显示。周末、休市及缺失数据不补点。")
                         Text("图中元/克按最新美元兑人民币汇率折算，不代表当年的人民币价格，也未作通胀调整。")
                     }.padding(24)
                 }.background(GoldTheme.background).foregroundStyle(GoldTheme.text)
@@ -48,93 +52,114 @@ struct HomeView: View {
 
     private var dashboard: some View {
         GeometryReader { geometry in
-            let w = geometry.size.width
-            let h = geometry.size.height
-            let scale = w / 430
-            ZStack(alignment: .topLeading) {
-                GoldTheme.background
-                Text("黄金价格")
-                    .font(.system(size: 22 * scale, weight: .regular))
-                    .foregroundStyle(GoldTheme.gold)
-                    .position(x: w / 2, y: h * 0.147)
-
-                HStack(alignment: .firstTextBaseline, spacing: 3 * scale) {
-                    Text(model.price.map { $0.formatted(.number.precision(.fractionLength(2)).grouping(.never)) } ?? "—")
-                        .font(.system(size: 46 * scale, weight: .bold))
-                    Text("¥")
-                        .font(.system(size: 22 * scale, weight: .bold))
-                }
-                .foregroundStyle(GoldTheme.gold)
-                .position(x: w * 0.518, y: h * 0.198)
-                .accessibilityLabel("黄金价格，\(model.price.map { String(format: "%.2f", $0) } ?? "暂无报价") 元每克")
-
-                Button { showingNotice = true } label: {
-                    HStack(spacing: 3 * scale) {
-                        Image(systemName: "bell.badge")
-                            .font(.system(size: 15 * scale))
-                        Text("订阅金价")
-                            .font(.system(size: 16 * scale, weight: .bold))
-                    }
-                    .foregroundStyle(GoldTheme.card)
-                    .frame(width: 109 * scale, height: 31 * scale)
-                    .background(GoldTheme.gold, in: GoldTheme.capsuleShape)
-                }
-                .buttonStyle(.plain)
-                .position(x: w / 2, y: h * 0.256)
-
-                HStack(spacing: 8 * scale) {
-                    ForEach(MarketRange.allCases, id: \.self) { range in
-                        Button {
-                            model.range = range
-                        } label: {
-                            Text(range.rawValue)
-                                .font(.system(size: 13 * scale))
-                                .foregroundStyle(model.range == range ? GoldTheme.card : GoldTheme.serviceText)
-                                .frame(width: (range == .history ? 104 : 63) * scale, height: 30 * scale)
-                                .background(model.range == range ? GoldTheme.gold : GoldTheme.card,
-                                            in: GoldTheme.rangeShape)
+            ScrollView {
+                VStack(spacing: 18) {
+                    VStack(spacing: 6) {
+                        Text("黄金价格").font(.headline).foregroundStyle(GoldTheme.goldSoft)
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Text(model.price.map { $0.formatted(.number.precision(.fractionLength(2)).grouping(.never)) } ?? "—")
+                                .font(.system(size: 42, weight: .bold, design: .rounded))
+                            Text("元/克").font(.subheadline)
+                        }.foregroundStyle(GoldTheme.gold)
+                            .accessibilityLabel("黄金价格，\(model.price.map { String(format: "%.2f", $0) } ?? "暂无报价") 元每克")
+                        Button { showingNotice = true } label: {
+                            Label("订阅金价", systemImage: "bell.badge").font(.subheadline.weight(.medium))
+                                .padding(.horizontal, 16).frame(minHeight: 36)
+                                .foregroundStyle(GoldTheme.onGold).background(GoldTheme.gold, in: GoldTheme.capsuleShape)
+                        }.buttonStyle(.plain)
+                        if let message = model.message {
+                            Button(message) { Task { await model.refresh() } }
+                                .font(.caption).foregroundStyle(GoldTheme.textSecondary)
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(model.range == range ? .isSelected : [])
-                    }
-                }
-                .position(x: w / 2, y: h * 0.416)
+                    }.padding(.top, 10)
 
-                VStack(spacing: 4 * scale) {
-                    Text(model.range == .realtime ? "元/克 · 近20分钟走势" : "元/克 · 国际金价按最新汇率折算")
-                        .font(.system(size: 10 * scale))
-                        .foregroundStyle(GoldTheme.textSecondary)
-                    if let message = model.message {
-                        Button(message) { Task { await model.refresh() } }
-                            .font(.system(size: 10 * scale))
-                            .foregroundStyle(GoldTheme.textSecondary)
-                    }
-                }
-                .position(x: w / 2, y: h * 0.307)
+                    VStack(spacing: 14) {
+                        HStack(spacing: 6) {
+                            ForEach(MarketRange.allCases, id: \.self) { range in
+                                Button { model.range = range } label: {
+                                    Text(range.rawValue).font(.system(size: 13, weight: .medium))
+                                        .frame(maxWidth: .infinity, minHeight: 44)
+                                        .foregroundStyle(model.range == range ? GoldTheme.onGold : GoldTheme.textSecondary)
+                                        .background(model.range == range ? GoldTheme.gold : GoldTheme.card, in: GoldTheme.rangeShape)
+                                }.buttonStyle(.plain)
+                                    .accessibilityAddTraits(model.range == range ? .isSelected : [])
+                            }
+                        }
+                        HStack(spacing: 12) {
+                            HStack(spacing: 2) {
+                                ForEach(ChartPriceScale.allCases, id: \.self) { scale in
+                                    Button { model.priceScale = scale } label: {
+                                        Text(scale.rawValue).font(.subheadline.weight(.semibold))
+                                            .frame(width: 66, height: 44)
+                                            .foregroundStyle(model.priceScale == scale ? GoldTheme.onGold : GoldTheme.textSecondary)
+                                            .background(model.priceScale == scale ? GoldTheme.gold : GoldTheme.card, in: GoldTheme.rangeShape)
+                                    }.buttonStyle(.plain)
+                                        .accessibilityLabel(scale.rawValue + "价格刻度")
+                                        .accessibilityAddTraits(model.priceScale == scale ? .isSelected : [])
+                                        .accessibilityIdentifier(scale == .linear ? "chart.scale.linear" : "chart.scale.log")
+                                }
+                            }.padding(3).background(GoldTheme.card, in: GoldTheme.rangeShape)
+                            Spacer(minLength: 0)
+                            Button { model.resetViewport() } label: {
+                                Label("复位", systemImage: "arrow.counterclockwise")
+                                    .font(.subheadline.weight(.semibold)).frame(minWidth: 82, minHeight: 44)
+                                    .foregroundStyle(model.canReset ? GoldTheme.gold : GoldTheme.textFaint)
+                                    .background(GoldTheme.card, in: GoldTheme.rangeShape)
+                                    .overlay(GoldTheme.rangeShape.strokeBorder(model.canReset ? GoldTheme.gold : GoldTheme.cardStroke))
+                            }.buttonStyle(.plain).disabled(!model.canReset).accessibilityIdentifier("chart.reset")
+                        }
+                        HStack {
+                            Text(model.range == .realtime ? "元/克 · 最近 20 分钟" : "截至昨天 · 元/克 · 按最新汇率折算")
+                            Spacer(minLength: 0)
+                            Button { showingHistorySources = true } label: {
+                                Image(systemName: "info.circle").foregroundStyle(GoldTheme.goldSoft)
+                            }.accessibilityLabel("历史数据说明")
+                        }.font(.system(size: 11)).foregroundStyle(GoldTheme.textSecondary)
 
-                HStack(spacing: 12) {
-                    Text("双指缩放 / 移动 · 单指查价")
-                    Button {
-                        model.priceScale = model.priceScale == .linear ? .logarithmic : .linear
-                    } label: {
-                        Text(model.priceScale.rawValue).foregroundStyle(GoldTheme.gold)
-                    }
-                    .accessibilityLabel("纵轴：" + model.priceScale.rawValue + "，点击切换")
-                    .accessibilityIdentifier("chart.priceScale")
-                    if model.viewport != nil { Button("复位") { model.resetViewport() } }
-                    if model.range == .history { Button("数据说明") { showingHistorySources = true } }
-                }
-                .font(.system(size: 10 * scale))
-                .foregroundStyle(GoldTheme.textSecondary)
-                .position(x: w / 2, y: h * 0.458)
+                        trendChart
+                            .frame(height: max(200, min(280, geometry.size.height * 0.30)))
+                            .accessibilityLabel("\(model.range.rawValue)黄金价格走势图，当前区间\(model.windowPoints.count)个行情点")
 
-                trendChart
-                    .frame(width: w * 0.944, height: h * 0.304)
-                    .position(x: w / 2, y: h * (0.474 + 0.152))
-                    .accessibilityLabel("\(model.range.rawValue)黄金价格走势图，\(model.points.count)个行情点")
-            }
+                        VStack(spacing: 10) {
+                            HStack(alignment: .center) {
+                                if model.range == .realtime {
+                                    Text(windowLabel).font(.caption.monospacedDigit()).foregroundStyle(GoldTheme.text)
+                                } else {
+                                    Button { showingDates = true } label: {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "calendar")
+                                            Text(windowLabel).monospacedDigit()
+                                            Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
+                                        }.font(.system(size: 12, weight: .medium)).foregroundStyle(GoldTheme.goldSoft)
+                                            .frame(minHeight: 44)
+                                    }.accessibilityIdentifier("chart.dates")
+                                }
+                                Spacer(minLength: 2)
+                                Text("\(model.windowPoints.count) 个点").font(.caption).foregroundStyle(GoldTheme.textSecondary)
+                            }
+                            ChartRangeNavigator(points: model.points, bounds: model.fullDomain, window: model.xDomain,
+                                                scale: model.priceScale, daily: model.range != .realtime,
+                                                begin: model.beginNavigatorGesture, move: model.moveNavigator, end: model.endChartGesture)
+                                .disabled(model.points.isEmpty)
+                            HStack {
+                                Text(overviewLabel(model.fullDomain.lowerBound))
+                                Spacer()
+                                Text(overviewLabel(model.fullDomain.upperBound))
+                            }.font(.system(size: 10)).foregroundStyle(GoldTheme.textFaint)
+                            Text("拖动选框浏览 · 拖动两端缩放 · 主图单指查价")
+                                .font(.system(size: 11)).foregroundStyle(GoldTheme.textSecondary)
+                        }
+                    }
+                }.padding(.horizontal, 18).padding(.bottom, 110)
+            }.scrollIndicators(.hidden).background(GoldTheme.background)
         }
-        .ignoresSafeArea()
+    }
+    private var windowLabel: String {
+        let window = model.xDomain
+        if model.range == .realtime {
+            return window.lowerBound.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits)) + " — " + window.upperBound.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).second(.twoDigits))
+        }
+        return window.lowerBound.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits)) + " — " + window.upperBound.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits))
     }
 
     private var trendChart: some View {
@@ -173,8 +198,8 @@ struct HomeView: View {
             .chartXScale(domain: model.xDomain)
             .chartXScale(range: .plotDimension(startPadding: 0, endPadding: 0))
             .chartXAxis {
-                AxisMarks(values: axisDates) { value in
-                    AxisValueLabel(anchor: value.index == 0 ? .topLeading : (value.index == 3 ? .topTrailing : .top)) {
+                AxisMarks(values: model.axisDates) { value in
+                    AxisValueLabel(anchor: value.index == 0 ? .topLeading : (value.index == model.axisDates.count - 1 ? .topTrailing : .top)) {
                         if let date = value.as(Date.self) {
                             Text(axisLabel(date)).font(.system(size: 10)).foregroundStyle(GoldTheme.textSecondary)
                         }
@@ -223,15 +248,14 @@ struct HomeView: View {
             }
         }
     }
-    private var axisDates: [Date] {
-        let domain = model.xDomain
-        let span = domain.upperBound.timeIntervalSince(domain.lowerBound)
-        return (0...3).map { domain.lowerBound.addingTimeInterval(span * Double($0) / 3) }
+    private func overviewLabel(_ date: Date) -> String {
+        if model.range != .realtime { return date.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits)) }
+        return axisLabel(date)
     }
     private func axisLabel(_ date: Date) -> String {
         let span = model.xDomain.upperBound.timeIntervalSince(model.xDomain.lowerBound)
         if span > 730 * 86400 { return date.formatted(.dateTime.year()) }
-        if span > 86400 { return date.formatted(.dateTime.year(.twoDigits).month(.twoDigits).day(.twoDigits)) }
+        if model.range != .realtime { return date.formatted(.dateTime.year(.twoDigits).month(.twoDigits).day(.twoDigits)) }
         return date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
     }
     private func pointLabel(_ point: MarketChartPoint) -> String {
