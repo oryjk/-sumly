@@ -9,3 +9,5 @@ Validation: 106 simulator tests passed (`sumly_ios/build/window-stats-final.log`
 Native Simulator: full month displayed -73.13 CNY/g (-7.62%); resize displayed -39.59 (-4.27%); translation displayed -22.82 (-2.38%) and minimum changed to 930.32. Both summary and markers followed the visible range. Snapshot prices are from the test session and are not fixed references.
 
 Release target 0.1.1 (9). Client-only; backend unchanged.
+
+Released: implementation `28f0d6a` pushed to origin/main. Production archive 0.1.1 (9), com.oryjk.sumly. App Store Connect upload succeeded at 2026-09-29 19:12:17 +0800 (`build/upload-b9.log`, EXPORT SUCCEEDED), package processing pending. Screenshot: `sumly_ios/build/window-stats-pan.png`.
