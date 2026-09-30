@@ -4,9 +4,13 @@
 
 ## 本机私有配置
 
-配置文件固定放在仓库外：
+优先读取仓库外配置：
 
 `~/.config/sumly/appstore-connect.env`
+
+如果不存在，则读取项目内、但已被 Git 忽略的：
+
+`.appstore-connect.env`
 
 内容：
 
@@ -28,6 +32,16 @@ chmod 600 ~/.private_keys/AuthKey_<Key ID>.p8
 ```
 
 不要把 `.p8`、Key 内容或本机配置提交到 Git。
+
+## 验证鉴权
+
+在 `sumly_ios` 目录：
+
+```bash
+make upload-auth-check
+```
+
+这个命令只读取 App Store Connect 的 App 列表，不上传 build。
 
 ## 上传
 

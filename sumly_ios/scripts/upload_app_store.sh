@@ -4,6 +4,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 IOS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG_FILE="${SUMLY_ASC_CONFIG:-$HOME/.config/sumly/appstore-connect.env}"
+if [[ ! -f "$CONFIG_FILE" && -f "$IOS_DIR/.appstore-connect.env" ]]; then
+  CONFIG_FILE="$IOS_DIR/.appstore-connect.env"
+fi
 
 if [[ -f "$CONFIG_FILE" ]]; then
   # shellcheck disable=SC1090
@@ -23,6 +26,15 @@ fi
 if [[ ! -r "$ASC_KEY_PATH" ]]; then
   echo "App Store Connect private key is not readable: $ASC_KEY_PATH" >&2
   exit 1
+fi
+
+if [[ "${1:-}" == "--check-auth" ]]; then
+  xcrun altool --list-apps \
+    --api-key "$ASC_KEY_ID" \
+    --api-issuer "$ASC_ISSUER_ID" \
+    --p8-file-path "$ASC_KEY_PATH" >/dev/null
+  echo "App Store Connect API Key authentication succeeded."
+  exit 0
 fi
 
 cd "$IOS_DIR"
