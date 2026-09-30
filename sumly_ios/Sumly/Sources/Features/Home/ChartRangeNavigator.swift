@@ -63,7 +63,7 @@ struct ChartRangeNavigator: View {
                     .accessibilityIdentifier("chart.navigator.window")
             }.clipShape(GoldTheme.rangeShape)
         }
-        .frame(height: 64)
+        .frame(height: 48)
         .coordinateSpace(name: "chartNavigator")
         .onChange(of: gestureActive) { _, active in
             if !active { finishDrag() }

@@ -4,127 +4,156 @@ import Charts
 /// One complete pricing basis, used by both the live and frozen outgoing layer.
 struct MarketHomeChartContent: View {
     @Bindable var model: MarketHomeViewModel
-    let chartHeight: CGFloat
+    let availableHeight: CGFloat
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Binding var showingNotice: Bool
     @Binding var showingHistorySources: Bool
     @Binding var showingDates: Bool
 
     var body: some View {
-        VStack(spacing: 18) {
-            VStack(spacing: 6) {
-                Text("黄金价格").font(.headline).foregroundStyle(GoldTheme.goldSoft)
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(model.price.map { $0.formatted(.number.precision(.fractionLength(2)).grouping(.never)) } ?? "—")
-                        .font(.system(size: 42, weight: .bold, design: .rounded))
-                    Text("元/克").font(.subheadline)
-                }.foregroundStyle(GoldTheme.gold)
-                    .accessibilityLabel("黄金价格，\(model.price.map { String(format: "%.2f", $0) } ?? "暂无报价") 元每克")
-                Button { showingNotice = true } label: {
-                    Label("订阅金价", systemImage: "bell.badge").font(.subheadline.weight(.medium))
-                        .padding(.horizontal, 16).frame(minHeight: 36)
-                        .foregroundStyle(GoldTheme.onGold).background(GoldTheme.gold, in: GoldTheme.capsuleShape)
-                }.buttonStyle(.plain)
-                ZStack {
-                    if let message = model.message {
-                        Button(message) { Task { await model.refresh() } }
-                            .font(.caption).foregroundStyle(GoldTheme.textSecondary)
-                    }
-                }.frame(height: 18)
-            }.padding(.top, 10)
+        MarketDashboardLayout(availableHeight: availableHeight) {
+            quoteHeader
+            chartControls
+            VStack(alignment: .leading, spacing: 6) {
+                chartCaption
+                ChartWindowSummary(statistics: model.windowStatistics)
+            }.frame(maxWidth: .infinity, alignment: .leading)
 
-            VStack(spacing: 14) {
-                Menu {
-                    Picker("时间区间", selection: $model.range) {
-                        ForEach(MarketRange.allCases, id: \.self) { range in
-                            Text(rangeTitle(range)).tag(range)
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "calendar")
-                        Text("时间区间").foregroundStyle(GoldTheme.textSecondary)
-                        Spacer()
-                        Text(rangeTitle(model.range)).fontWeight(.semibold)
-                        Image(systemName: "chevron.down").font(.caption.weight(.bold))
-                    }
-                    .font(.subheadline).foregroundStyle(GoldTheme.gold)
-                    .padding(.horizontal, 14).frame(minHeight: 48)
-                    .background(GoldTheme.card, in: GoldTheme.rangeShape)
-                    .overlay(GoldTheme.rangeShape.strokeBorder(GoldTheme.gold.opacity(0.5)))
-                }
-                .accessibilityLabel("时间区间")
-                .accessibilityValue(rangeTitle(model.range))
-                .accessibilityIdentifier("chart.range")
-                HStack(spacing: 12) {
-                    HStack(spacing: 2) {
-                        ForEach(ChartPriceScale.allCases, id: \.self) { scale in
-                            Button { model.priceScale = scale } label: {
-                                Text(scale.rawValue).font(.subheadline.weight(.semibold))
-                                    .frame(width: 66, height: 44)
-                                    .foregroundStyle(model.priceScale == scale ? GoldTheme.onGold : GoldTheme.textSecondary)
-                                    .background(model.priceScale == scale ? GoldTheme.gold : GoldTheme.card, in: GoldTheme.rangeShape)
-                            }.buttonStyle(.plain)
-                                .accessibilityLabel(scale.rawValue + "价格刻度")
-                                .accessibilityAddTraits(model.priceScale == scale ? .isSelected : [])
-                                .accessibilityIdentifier(scale == .linear ? "chart.scale.linear" : "chart.scale.log")
-                        }
-                    }.padding(3).background(GoldTheme.card, in: GoldTheme.rangeShape)
-                    Spacer(minLength: 0)
-                    Button { model.resetViewport() } label: {
-                        Label("复位", systemImage: "arrow.counterclockwise")
-                            .font(.subheadline.weight(.semibold)).frame(minWidth: 82, minHeight: 44)
-                            .foregroundStyle(model.canReset ? GoldTheme.gold : GoldTheme.textFaint)
-                            .background(GoldTheme.card, in: GoldTheme.rangeShape)
-                            .overlay(GoldTheme.rangeShape.strokeBorder(model.canReset ? GoldTheme.gold : GoldTheme.cardStroke))
-                    }.buttonStyle(.plain).disabled(!model.canReset).accessibilityIdentifier("chart.reset")
-                }
-                VStack(alignment: .leading, spacing: 8) {
-                    chartCaption
-                    ChartWindowSummary(statistics: model.windowStatistics)
-                }.frame(maxWidth: .infinity, alignment: .leading)
-
-                if model.range == .realtime || model.range.dateBounds() != nil {
-                    trendChart
-                        .frame(height: chartHeight)
-                        .accessibilityLabel("\(rangeTitle(model.range))黄金价格走势图，当前区间\(model.windowPoints.count)个行情点")
-
-                    VStack(spacing: 10) {
-                        HStack(alignment: .center) {
-                            if model.range == .realtime {
-                                Text(windowLabel).font(.caption.monospacedDigit()).foregroundStyle(GoldTheme.text)
-                            } else {
-                                Button { showingDates = true } label: {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "calendar")
-                                        Text(windowLabel).monospacedDigit()
-                                        Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
-                                    }.font(.system(size: 12, weight: .medium)).foregroundStyle(GoldTheme.goldSoft)
-                                        .frame(minHeight: 44)
-                                }.accessibilityIdentifier("chart.dates")
-                            }
-                            Spacer(minLength: 2)
-                            Text("\(model.windowPoints.count) 个点").font(.caption).foregroundStyle(GoldTheme.textSecondary)
-                        }
-                        ChartRangeNavigator(points: model.points, bounds: model.fullDomain, window: model.xDomain,
-                                            scale: model.priceScale, daily: model.range != .realtime,
-                                            begin: model.beginNavigatorGesture, move: model.moveNavigator, end: model.endChartGesture)
-                            .disabled(model.points.isEmpty)
-                        HStack {
-                            Text(overviewLabel(model.fullDomain.lowerBound))
-                            Spacer()
-                            Text(overviewLabel(model.fullDomain.upperBound))
-                        }.font(.system(size: 10)).foregroundStyle(GoldTheme.textFaint)
-                        Text("区间内拖动浏览 · 两端缩放 · 主图单指查价")
-                            .font(.system(size: 11)).foregroundStyle(GoldTheme.textSecondary)
-                    }
-                } else {
-                    Text("今年暂无已收盘数据，首个交易日收盘后更新")
-                        .font(.subheadline).foregroundStyle(GoldTheme.textSecondary)
-                        .frame(maxWidth: .infinity, minHeight: 280)
-                }
+            if model.range == .realtime || model.range.dateBounds() != nil {
+                trendChart
+                    .accessibilityLabel("\(rangeTitle(model.range))黄金价格走势图，当前区间\(model.windowPoints.count)个行情点")
+            } else {
+                Text("今年暂无已收盘数据，首个交易日收盘后更新")
+                    .font(.subheadline).foregroundStyle(GoldTheme.textSecondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            navigator
         }
     }
+
+    private var quoteHeader: some View {
+        VStack(spacing: 3) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("黄金价格").font(.caption.weight(.medium)).foregroundStyle(GoldTheme.goldSoft)
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text(model.price.map { $0.formatted(.number.precision(.fractionLength(2)).grouping(.never)) } ?? "—")
+                            .font(.system(size: 36, weight: .bold, design: .rounded))
+                        Text("元/克").font(.caption)
+                    }.foregroundStyle(GoldTheme.gold)
+                        .lineLimit(1).minimumScaleFactor(0.75)
+                        .accessibilityLabel("黄金价格，\(model.price.map { String(format: "%.2f", $0) } ?? "暂无报价") 元每克")
+                }
+                Spacer(minLength: 0)
+                Button { showingNotice = true } label: {
+                    Label("订阅金价", systemImage: "bell.badge").font(.caption.weight(.medium))
+                        .padding(.horizontal, 12).frame(minHeight: 44)
+                        .foregroundStyle(GoldTheme.onGold).background(GoldTheme.gold, in: GoldTheme.capsuleShape)
+                }.buttonStyle(.plain).fixedSize()
+            }
+            ZStack(alignment: .leading) {
+                if let message = model.message {
+                    Button(message) { Task { await model.refresh() } }
+                        .font(.caption).foregroundStyle(GoldTheme.textSecondary)
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                }
+            }.frame(maxWidth: .infinity, minHeight: 18, maxHeight: 18, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder private var chartControls: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(spacing: 8) {
+                rangeMenu
+                HStack(spacing: 8) { scalePicker; Spacer(minLength: 0); resetButton }
+            }
+        } else {
+            HStack(spacing: 8) { rangeMenu; scalePicker; resetButton }
+        }
+    }
+
+    private var rangeMenu: some View {
+        Menu {
+            Picker("时间区间", selection: $model.range) {
+                ForEach(MarketRange.allCases, id: \.self) { range in
+                    Text(rangeTitle(range)).tag(range)
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Text(rangeTitle(model.range)).fontWeight(.semibold)
+                Image(systemName: "chevron.down").font(.caption2.weight(.bold))
+            }.font(.subheadline).foregroundStyle(GoldTheme.gold)
+                .lineLimit(1).minimumScaleFactor(0.7)
+                .padding(.horizontal, 8).frame(maxWidth: .infinity, minHeight: 44)
+                .background(GoldTheme.card, in: GoldTheme.rangeShape)
+                .overlay(GoldTheme.rangeShape.strokeBorder(GoldTheme.gold.opacity(0.5)))
+        }
+        .accessibilityLabel("时间区间")
+        .accessibilityValue(rangeTitle(model.range))
+        .accessibilityIdentifier("chart.range")
+    }
+
+    private var scalePicker: some View {
+        HStack(spacing: 2) {
+            ForEach(ChartPriceScale.allCases, id: \.self) { scale in
+                Button { model.priceScale = scale } label: {
+                    Text(scale.rawValue).font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 8).frame(minWidth: 44, minHeight: 44)
+                        .foregroundStyle(model.priceScale == scale ? GoldTheme.onGold : GoldTheme.textSecondary)
+                        .background(model.priceScale == scale ? GoldTheme.gold : GoldTheme.card, in: GoldTheme.rangeShape)
+                }.buttonStyle(.plain)
+                    .accessibilityLabel(scale.rawValue + "价格刻度")
+                    .accessibilityAddTraits(model.priceScale == scale ? .isSelected : [])
+                    .accessibilityIdentifier(scale == .linear ? "chart.scale.linear" : "chart.scale.log")
+            }
+        }.padding(3).background(GoldTheme.card, in: GoldTheme.rangeShape).fixedSize()
+    }
+
+    private var resetButton: some View {
+        Button { model.resetViewport() } label: {
+            Label("复位", systemImage: "arrow.counterclockwise")
+                .font(.subheadline.weight(.semibold)).padding(.horizontal, 8).frame(minHeight: 44)
+                .foregroundStyle(model.canReset ? GoldTheme.gold : GoldTheme.textFaint)
+                .background(GoldTheme.card, in: GoldTheme.rangeShape)
+                .overlay(GoldTheme.rangeShape.strokeBorder(model.canReset ? GoldTheme.gold : GoldTheme.cardStroke))
+        }.buttonStyle(.plain).disabled(!model.canReset)
+            .fixedSize().accessibilityIdentifier("chart.reset")
+    }
+
+    private var navigator: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 4) {
+                if model.range == .realtime {
+                    Text(windowLabel).font(.caption.monospacedDigit()).foregroundStyle(GoldTheme.text)
+                } else {
+                    Button { showingDates = true } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "calendar")
+                            Text(windowLabel).monospacedDigit()
+                            Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
+                        }.font(.system(size: 12, weight: .medium)).foregroundStyle(GoldTheme.goldSoft)
+                            .frame(minHeight: 44)
+                    }.accessibilityIdentifier("chart.dates")
+                }
+                Spacer(minLength: 0)
+                Text("\(model.windowPoints.count) 个点").font(.caption).foregroundStyle(GoldTheme.textSecondary)
+            }.lineLimit(1).minimumScaleFactor(0.8)
+            ChartRangeNavigator(points: model.points, bounds: model.fullDomain, window: model.xDomain,
+                                scale: model.priceScale, daily: model.range != .realtime,
+                                begin: model.beginNavigatorGesture, move: model.moveNavigator, end: model.endChartGesture)
+                .disabled(model.points.isEmpty)
+            HStack {
+                Text(overviewLabel(model.fullDomain.lowerBound))
+                Spacer()
+                Text(overviewLabel(model.fullDomain.upperBound))
+            }.font(.system(size: 10)).foregroundStyle(GoldTheme.textFaint)
+            Text("区间内拖动浏览 · 两端缩放 · 主图单指查价")
+                .font(.system(size: 11)).foregroundStyle(GoldTheme.textSecondary)
+                .lineLimit(1).minimumScaleFactor(0.8)
+        }
+    }
+
     private func rangeTitle(_ range: MarketRange) -> String {
         if model.basis == .domestic, range == .history { return "全部历史" }
         return range.rawValue
@@ -295,4 +324,39 @@ struct MarketHomeChartContent: View {
         }
     }
 
+}
+
+/// Measure fixed controls first, then give the chart the actual remaining height.
+/// Large accessibility text can exceed the screen and use the parent scroll view.
+private struct MarketDashboardLayout: Layout {
+    let availableHeight: CGFloat
+    private let spacing: CGFloat = 10
+    private let minimumChartHeight: CGFloat = 140
+
+    private func measurements(width: CGFloat, subviews: Subviews) -> (heights: [CGFloat], total: CGFloat) {
+        let proposal = ProposedViewSize(width: width, height: nil)
+        var heights = subviews.enumerated().map { index, view in
+            index == 3 ? 0 : view.sizeThatFits(proposal).height
+        }
+        let fixedHeight = heights.reduce(0, +) + spacing * CGFloat(max(0, subviews.count - 1))
+        if heights.indices.contains(3) {
+            heights[3] = max(minimumChartHeight, availableHeight - fixedHeight)
+        }
+        return (heights, heights.reduce(0, +) + spacing * CGFloat(max(0, subviews.count - 1)))
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 320
+        return CGSize(width: width, height: measurements(width: width, subviews: subviews).total)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let heights = measurements(width: bounds.width, subviews: subviews).heights
+        var y = bounds.minY
+        for (index, view) in subviews.enumerated() {
+            view.place(at: CGPoint(x: bounds.minX, y: y), anchor: .topLeading,
+                       proposal: ProposedViewSize(width: bounds.width, height: heights[index]))
+            y += heights[index] + spacing
+        }
+    }
 }

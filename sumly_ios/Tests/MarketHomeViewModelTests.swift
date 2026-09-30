@@ -207,6 +207,37 @@ private struct BasisSwitchFixture: GoldPriceServicing, GoldQuoteServicing, GoldR
     #expect(model.selectedPoint == nil)
 }
 
+@MainActor @Test func chartSelectionExpiresAfterFiveSecondsAndRestoresExtrema() async throws {
+    let service = HomeMarketFixture()
+    let model = MarketHomeViewModel(dailyService: service, quoteService: service, realtimeService: service)
+    await model.refresh()
+    model.selectChart(at: 0.5)
+    #expect(model.selectedPoint?.price == 675.25)
+    let snapshot = model.makeDisplaySnapshot()
+    try await Task.sleep(for: .seconds(5.4))
+    #expect(model.selectedDate == nil)
+    #expect(model.selectedPoint == nil)
+    #expect(model.windowStatistics.high?.price == 675.25)
+    #expect(model.windowStatistics.low?.price == 675.25)
+    // The outgoing animation layer must remain frozen rather than start timers.
+    #expect(snapshot.selectedPoint?.price == 675.25)
+}
+
+@MainActor @Test func selectingAgainRestartsFiveSecondExpiryEvenAtTheSamePosition() async throws {
+    let service = HomeMarketFixture()
+    let model = MarketHomeViewModel(dailyService: service, quoteService: service, realtimeService: service)
+    await model.refresh()
+    model.selectChart(at: 0.5)
+    try await Task.sleep(for: .seconds(3))
+    model.selectChart(at: 0.5)
+    let latestSelection = model.selectedDate
+    try await Task.sleep(for: .seconds(2.4))
+    #expect(model.selectedDate == latestSelection)
+    #expect(model.selectedPoint?.price == 675.25)
+    try await Task.sleep(for: .seconds(3))
+    #expect(model.selectedDate == nil)
+}
+
 @Test func flatPriceDomainAlwaysHasOneYuanOfRoom() {
     for value in [938.0, 938.1, 938.25, 938.5, 938.75] {
         let domain = MarketHomeViewModel.chartDomain([MarketChartPoint(date: .now, price: value)])

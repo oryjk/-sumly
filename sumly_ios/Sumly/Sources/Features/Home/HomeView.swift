@@ -37,9 +37,9 @@ struct HomeView: View {
             stopBasisTransition()
             model.clearMarketCache()
         }
-        .onDisappear { stopBasisTransition() }
+        .onDisappear { stopBasisTransition(); model.selectedDate = nil }
         .onChange(of: scenePhase) { _, phase in
-            if phase != .active { stopBasisTransition() }
+            if phase != .active { stopBasisTransition(); model.selectedDate = nil }
         }
         .alert("口径切换失败", isPresented: $showingBasisError) {
             Button("知道了", role: .cancel) {}
@@ -86,18 +86,21 @@ struct HomeView: View {
 
     private var dashboard: some View {
         GeometryReader { geometry in
+            // The custom tab bar scales with width and its add button protrudes upward.
+            let bottomInset = 110 * geometry.size.width / 430
+            let availableChartContentHeight = max(0, geometry.size.height - bottomInset - 66)
             ScrollView {
-                VStack(spacing: 18) {
+                VStack(spacing: 12) {
                     marketBasisPicker
                         .padding(.top, 8)
 
-                    MarketHomeChartContent(model: model, chartHeight: max(200, min(280, geometry.size.height * 0.30)),
+                    MarketHomeChartContent(model: model, availableHeight: availableChartContentHeight,
                         showingNotice: $showingNotice, showingHistorySources: $showingHistorySources, showingDates: $showingDates)
                         .transaction { $0.animation = nil }
                         .opacity(crossfadeProgress)
                         .overlay(alignment: .top) {
                             if let outgoing {
-                                MarketHomeChartContent(model: outgoing, chartHeight: max(200, min(280, geometry.size.height * 0.30)),
+                                MarketHomeChartContent(model: outgoing, availableHeight: availableChartContentHeight,
                                     showingNotice: $showingNotice, showingHistorySources: $showingHistorySources, showingDates: $showingDates)
                                     .transaction { $0.animation = nil }
                                     .opacity(1 - crossfadeProgress)
@@ -107,7 +110,7 @@ struct HomeView: View {
                             }
                         }
                         .allowsHitTesting(outgoing == nil)
-                }.padding(.horizontal, 18).padding(.bottom, 110)
+                }.padding(.horizontal, 18).padding(.bottom, bottomInset)
             }.scrollIndicators(.hidden).background(GoldTheme.background)
         }
     }

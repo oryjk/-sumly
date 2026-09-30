@@ -61,7 +61,13 @@ enum MarketRange: String, CaseIterable {
 @MainActor @Observable
 final class MarketHomeViewModel {
     var range: MarketRange = .realtime { didSet { resetViewport() } }
-    var selectedDate: Date?
+    var selectedDate: Date? {
+        didSet {
+            selectionExpiryTask?.cancel()
+            selectionExpiryTask = nil
+        }
+    }
+    @ObservationIgnored private var selectionExpiryTask: Task<Void, Never>?
     var priceScale: ChartPriceScale = .linear
     private var cacheGeneration: UInt = 0
     private(set) var viewport: ClosedRange<Date>?
@@ -422,6 +428,12 @@ final class MarketHomeViewModel {
         guard gestureViewport == nil else { return }
         let domain = xDomain
         selectedDate = domain.lowerBound.addingTimeInterval(domain.upperBound.timeIntervalSince(domain.lowerBound) * min(1, max(0, fraction)))
+        selectionExpiryTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .seconds(5)) }
+            catch { return }
+            guard !Task.isCancelled else { return }
+            self?.selectedDate = nil
+        }
     }
     func loadHistory() async {
         guard !historyLoading else { return }
