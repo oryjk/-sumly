@@ -51,7 +51,6 @@ private struct GoldRootView: View {
                 GoldTheme.background.ignoresSafeArea()
                 if selectedTab == 0 {
                     HomeView(marketBasis: marketBasisBinding)
-                        .id(marketBasis.rawValue)
                 } else if selectedTab == 3 {
                     AccountView(session: session)
                         .padding(.bottom, 80 * scale)

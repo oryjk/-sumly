@@ -37,7 +37,7 @@ struct HomeView: View {
             NavigationStack {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        if marketBasis == .domestic {
+                        if model.basis == .domestic {
                             Text("国内 · Au99.99").font(.headline)
                             Text("实时价格来自新浪 Au99.99 报价，历史日线来自上海黄金交易所。价格原始单位就是人民币/克，不做美元汇率换算。")
                             Text("走势图只展示真实可用交易数据；周末、休市及缺失日期不补造价格。")
@@ -187,17 +187,21 @@ struct HomeView: View {
         HStack(spacing: 4) {
             ForEach(GoldMarketBasis.allCases) { basis in
                 Button {
-                    marketBasis = basis
+                    Task {
+                        if await model.switchBasis(to: basis) {
+                            marketBasis = basis
+                        }
+                    }
                 } label: {
                     Text(basis.title)
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(marketBasis == basis ? GoldTheme.onGold : GoldTheme.textSecondary)
+                        .foregroundStyle(model.basis == basis ? GoldTheme.onGold : GoldTheme.textSecondary)
                         .frame(maxWidth: .infinity)
                         .frame(height: 38)
-                        .background(marketBasis == basis ? GoldTheme.gold : GoldTheme.card, in: GoldTheme.capsuleShape)
+                        .background(model.basis == basis ? GoldTheme.gold : GoldTheme.card, in: GoldTheme.capsuleShape)
                 }
                 .buttonStyle(.plain)
-                .accessibilityAddTraits(marketBasis == basis ? .isSelected : [])
+                .accessibilityAddTraits(model.basis == basis ? .isSelected : [])
                 .accessibilityIdentifier("market.basis.\(basis.rawValue)")
             }
         }
@@ -209,7 +213,7 @@ struct HomeView: View {
     }
 
     private func rangeTitle(_ range: MarketRange) -> String {
-        if marketBasis == .domestic, range == .history { return "全部历史" }
+        if model.basis == .domestic, range == .history { return "全部历史" }
         return range.rawValue
     }
 
@@ -225,7 +229,7 @@ struct HomeView: View {
         HStack(spacing: 8) {
             Text(model.range == .realtime
                  ? "元/克 · 最近 20 分钟"
-                 : (marketBasis == .domestic ? "截至昨天 · 元/克 · Au99.99" : "截至昨天 · 元/克 · 按最新汇率折算"))
+                 : (model.basis == .domestic ? "截至昨天 · 元/克 · Au99.99" : "截至昨天 · 元/克 · 按最新汇率折算"))
             Button { showingHistorySources = true } label: {
                 Image(systemName: "info.circle").foregroundStyle(GoldTheme.goldSoft)
             }.accessibilityLabel("历史数据说明")

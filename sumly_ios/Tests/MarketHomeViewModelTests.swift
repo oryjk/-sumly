@@ -57,6 +57,92 @@ private struct DomesticQuoteFixture: GoldQuoteServicing {
     #expect(model.fullDomain.lowerBound == GoldDailyPrice.parseDay("2026-09-28")!)
 }
 
+private actor BasisSwitchGate {
+    private var released = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        if released { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func release() {
+        released = true
+        let pending = waiters
+        waiters.removeAll()
+        pending.forEach { $0.resume() }
+    }
+}
+
+private struct BasisSwitchFixture: GoldPriceServicing, GoldQuoteServicing, GoldRealtimeServicing, GoldHistoryServicing {
+    let symbol: String
+    let quotePrice: Double
+    let historyPrice: Double
+    let gate: BasisSwitchGate?
+
+    func fetchQuote() async throws -> GoldQuote {
+        if let gate { await gate.wait() }
+        return GoldQuote(symbol: symbol, price: quotePrice, open: quotePrice, high: quotePrice, low: quotePrice,
+                         prevClose: quotePrice, usdCNY: symbol == "AU9999" ? 0 : 7,
+                         cnyPerGram: symbol == "AU9999" ? quotePrice : quotePrice * 7 / 31.1034768, asOf: .now)
+    }
+
+    func fetchDailyPrices() async throws -> [GoldDailyPrice] {
+        if let gate { await gate.wait() }
+        let date = GoldDailyPrice.parseDay("2026-09-28")!
+        return [GoldDailyPrice(date: date, open: historyPrice, high: historyPrice, low: historyPrice, close: historyPrice)]
+    }
+
+    func fetchRealtime() async throws -> [MarketChartPoint] {
+        if let gate { await gate.wait() }
+        return [MarketChartPoint(date: .now.addingTimeInterval(-1), price: symbol == "AU9999" ? quotePrice : quotePrice * 7 / 31.1034768)]
+    }
+
+    func fetchHistory() async throws -> [GoldHistoryPoint] {
+        if let gate { await gate.wait() }
+        return [GoldHistoryPoint(date: GoldDailyPrice.parseDay("2026-09-28")!, price: historyPrice, granularity: .daily, source: "fixture")]
+    }
+}
+
+@MainActor @Test func basisSwitchKeepsExistingPageStateUntilNewSnapshotIsReady() async {
+    let international = BasisSwitchFixture(symbol: "XAUUSD", quotePrice: 3100, historyPrice: 3000, gate: nil)
+    let gate = BasisSwitchGate()
+    let domestic = BasisSwitchFixture(symbol: "AU9999", quotePrice: 945.2, historyPrice: 942.35, gate: gate)
+    let model = MarketHomeViewModel(
+        basis: .international,
+        dailyService: international,
+        quoteService: international,
+        realtimeService: international,
+        historyService: international,
+        serviceFactory: { basis in
+            let service = basis == .domestic ? domestic : international
+            return MarketHomeDataServices(daily: service, quote: service, realtime: service, history: service)
+        }
+    )
+    await model.refresh()
+    model.range = .month
+    model.priceScale = .logarithmic
+    let oldPrice = model.price
+    let oldPoints = model.points
+
+    let switching = Task { await model.switchBasis(to: .domestic) }
+    await Task.yield()
+
+    #expect(model.basis == .international)
+    #expect(model.price == oldPrice)
+    #expect(model.points == oldPoints)
+    #expect(model.range == .month)
+    #expect(model.priceScale == .logarithmic)
+
+    await gate.release()
+    #expect(await switching.value)
+    #expect(model.basis == .domestic)
+    #expect(model.price == 945.2)
+    #expect(model.points.map(\.price) == [942.35])
+    #expect(model.range == .month)
+    #expect(model.priceScale == .logarithmic)
+}
+
 @MainActor @Test func homeRangesUseRealDailyDates() async {
     let service = HomeMarketFixture()
     let model = MarketHomeViewModel(dailyService: service, quoteService: service, realtimeService: service)

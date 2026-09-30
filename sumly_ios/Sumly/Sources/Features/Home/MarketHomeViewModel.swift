@@ -15,6 +15,18 @@ protocol GoldRealtimeServicing: Sendable {
     func fetchRealtime() async throws -> [MarketChartPoint]
 }
 
+struct MarketHomeDataServices {
+    let daily: any GoldPriceServicing
+    let quote: any GoldQuoteServicing
+    let realtime: any GoldRealtimeServicing
+    let history: any GoldHistoryServicing
+
+    static func backend(for basis: GoldMarketBasis) -> MarketHomeDataServices {
+        let backend = BackendGoldPriceService(instrumentID: basis.instrumentID)
+        return MarketHomeDataServices(daily: backend, quote: backend, realtime: backend, history: backend)
+    }
+}
+
 enum MarketRange: String, CaseIterable {
     case realtime = "实时"
     case month = "近一月"
@@ -59,8 +71,8 @@ final class MarketHomeViewModel {
     }
     private var historyFailed = false
     private(set) var historyLoading = false
-    private let basis: GoldMarketBasis
-    private let historyService: any GoldHistoryServicing
+    private(set) var basis: GoldMarketBasis
+    private var historyService: any GoldHistoryServicing
     private(set) var quote: GoldQuote?
     private(set) var daily: [GoldDailyPrice] = [] {
         didSet { if daily != oldValue { historyRevision &+= 1 } }
@@ -77,9 +89,12 @@ final class MarketHomeViewModel {
     private var quoteFailed = false
     private var dailyFailed = false
     private var realtimeFailed = false
-    private let dailyService: any GoldPriceServicing
-    private let quoteService: any GoldQuoteServicing
-    private let realtimeService: any GoldRealtimeServicing
+    private var dailyService: any GoldPriceServicing
+    private var quoteService: any GoldQuoteServicing
+    private var realtimeService: any GoldRealtimeServicing
+    private let serviceFactory: (GoldMarketBasis) -> MarketHomeDataServices
+    private var basisSwitchRequest: UUID?
+    private(set) var isSwitchingBasis = false
 
     // Derived data is not observable state: filling this cache during a view read
     // must not schedule another SwiftUI render. Source properties remain observed.
@@ -100,13 +115,15 @@ final class MarketHomeViewModel {
          dailyService: (any GoldPriceServicing)? = nil,
          quoteService: (any GoldQuoteServicing)? = nil,
          realtimeService: (any GoldRealtimeServicing)? = nil,
-         historyService: (any GoldHistoryServicing)? = nil) {
-        let backend = BackendGoldPriceService(instrumentID: basis.instrumentID)
+         historyService: (any GoldHistoryServicing)? = nil,
+         serviceFactory: ((GoldMarketBasis) -> MarketHomeDataServices)? = nil) {
+        let backend = MarketHomeDataServices.backend(for: basis)
         self.basis = basis
-        self.historyService = historyService ?? backend
-        self.dailyService = dailyService ?? backend
-        self.quoteService = quoteService ?? backend
-        self.realtimeService = realtimeService ?? backend
+        self.historyService = historyService ?? backend.history
+        self.dailyService = dailyService ?? backend.daily
+        self.quoteService = quoteService ?? backend.quote
+        self.realtimeService = realtimeService ?? backend.realtime
+        self.serviceFactory = serviceFactory ?? { MarketHomeDataServices.backend(for: $0) }
     }
 
     var price: Double? {
@@ -221,6 +238,64 @@ final class MarketHomeViewModel {
         async let i: Void = loadRealtime()
         _ = await (q, d, i)
         if range != .realtime { await loadHistory() }
+    }
+
+    /// 在不重建页面的情况下切换行情口径。新口径的数据准备完成前保留当前快照，
+    /// 成功后在同一个 MainActor 周期内替换报价、实时走势和历史数据，避免新旧口径混用。
+    @discardableResult
+    func switchBasis(to newBasis: GoldMarketBasis) async -> Bool {
+        guard newBasis != basis else { return true }
+        guard !isSwitchingBasis else { return false }
+
+        let request = UUID()
+        basisSwitchRequest = request
+        isSwitchingBasis = true
+        defer {
+            if basisSwitchRequest == request {
+                isSwitchingBasis = false
+            }
+        }
+
+        let next = serviceFactory(newBasis)
+        async let quoteFetch: GoldQuote = next.quote.fetchQuote()
+        async let realtimeFetch: [MarketChartPoint] = next.realtime.fetchRealtime()
+        async let dailyFetch: [GoldDailyPrice] = next.daily.fetchDailyPrices()
+        async let historyFetch: [GoldHistoryPoint] = next.history.fetchHistory()
+
+        do {
+            let fetchedQuote = try await quoteFetch
+            let fetchedRealtime = (try? await realtimeFetch) ?? []
+            let fetchedDaily = (try? await dailyFetch) ?? []
+            let fetchedHistory = (try? await historyFetch) ?? []
+            guard basisSwitchRequest == request, !Task.isCancelled else { return false }
+
+            cacheGeneration &+= 1
+            preparedKey = nil; preparedPoints = []
+            scopedKey = nil; scopedRange = nil; scopedPoints = []
+
+            basis = newBasis
+            dailyService = next.daily
+            quoteService = next.quote
+            realtimeService = next.realtime
+            historyService = next.history
+            quote = fetchedQuote
+            realtime = fetchedRealtime
+            daily = fetchedDaily
+            history = fetchedHistory
+            quoteFailed = false
+            realtimeFailed = fetchedRealtime.isEmpty
+            dailyFailed = fetchedDaily.isEmpty && fetchedHistory.isEmpty
+            historyFailed = fetchedHistory.isEmpty && fetchedDaily.isEmpty
+            quoteLoading = false
+            realtimeLoading = false
+            dailyLoading = false
+            historyLoading = false
+            selectedDate = nil
+            gestureViewport = nil
+            return true
+        } catch {
+            return false
+        }
     }
 
     var fullDomain: ClosedRange<Date> {
