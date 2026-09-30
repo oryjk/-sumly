@@ -610,3 +610,134 @@ private actor SuspendedRealtimeService: GoldRealtimeServicing {
     await foreground.value
     #expect(model.points.first?.price == 800)
 }
+
+
+@MainActor @Test func basisTransitionCapturesOldPricesBeforeAtomicCommit() async {
+    let international = BasisSwitchFixture(symbol: "XAUUSD", quotePrice: 3100, historyPrice: 3000, gate: nil)
+    let domestic = BasisSwitchFixture(symbol: "AU9999", quotePrice: 945.2, historyPrice: 942.35, gate: nil)
+    let model = MarketHomeViewModel(basis: .international, dailyService: international,
+        quoteService: international, realtimeService: international, historyService: international,
+        serviceFactory: { _ in MarketHomeDataServices(daily: domestic, quote: domestic, realtime: domestic, history: domestic) })
+    model.range = .month
+    model.priceScale = .logarithmic
+    await model.refresh()
+    model.setDateWindow(model.fullDomain)
+    let originalPoints = model.points
+    let originalPrice = model.price
+    let originalWindow = model.xDomain
+    var outgoing: MarketHomeViewModel?
+    var commits = 0
+    let switched = await model.switchBasis(to: .domestic, beforeCommit: {
+        commits += 1
+        outgoing = model.makeDisplaySnapshot()
+        #expect(model.basis == .international)
+    })
+    #expect(switched)
+    #expect(commits == 1)
+    #expect(outgoing?.basis == .international)
+    #expect(outgoing?.price == originalPrice)
+    #expect(outgoing?.points == originalPoints)
+    #expect(outgoing?.xDomain == originalWindow)
+    #expect(outgoing?.priceScale == .logarithmic)
+    #expect(model.price == 945.2)
+    #expect(model.range == .month)
+    #expect(model.priceScale == .logarithmic)
+    model.clearMarketCache()
+    #expect(outgoing?.points == originalPoints)
+    #expect(outgoing?.price == originalPrice)
+}
+
+@MainActor @Test func failedBasisSwitchDoesNotBeginDisplayTransition() async {
+    let service = HomeMarketFixture()
+    let failure = HomeMarketFixture(failing: true)
+    let model = MarketHomeViewModel(dailyService: service, quoteService: service, realtimeService: service,
+        serviceFactory: { _ in MarketHomeDataServices(daily: failure, quote: failure, realtime: failure, history: DomesticHistoryFixture()) })
+    await model.refresh()
+    let old = model.points
+    var commits = 0
+    #expect(await model.switchBasis(to: .domestic, beforeCommit: { commits += 1 }) == false)
+    #expect(commits == 0)
+    #expect(model.basis == .international)
+    #expect(model.points == old)
+    #expect(!model.isSwitchingBasis)
+}
+
+
+private struct FailingRealtimeOnly: GoldRealtimeServicing {
+    func fetchRealtime() async throws -> [MarketChartPoint] { throw URLError(.networkConnectionLost) }
+}
+
+@MainActor @Test func successfulQuoteWithFailedSelectedChartKeepsOldBasis() async {
+    let service = HomeMarketFixture()
+    let model = MarketHomeViewModel(dailyService: service, quoteService: service, realtimeService: service,
+        serviceFactory: { _ in MarketHomeDataServices(daily: service, quote: DomesticQuoteFixture(), realtime: FailingRealtimeOnly(), history: DomesticHistoryFixture()) })
+    await model.refresh()
+    let old = model.points
+    var commits = 0
+    #expect(await model.switchBasis(to: .domestic, beforeCommit: { commits += 1 }) == false)
+    #expect(model.basis == .international)
+    #expect(model.points == old)
+    #expect(commits == 0)
+}
+
+private actor DelayedFailingHistory: GoldHistoryServicing {
+    private var pending: CheckedContinuation<[GoldHistoryPoint], Error>?
+    private var started: CheckedContinuation<Void, Never>?
+    func fetchHistory() async throws -> [GoldHistoryPoint] {
+        try await withCheckedThrowingContinuation {
+            pending = $0
+            started?.resume(); started = nil
+        }
+    }
+    func waitForStart() async {
+        if pending != nil { return }
+        await withCheckedContinuation { started = $0 }
+    }
+    func fail() { pending?.resume(throwing: URLError(.networkConnectionLost)); pending = nil }
+}
+
+@MainActor @Test func oldHistoryFailureCannotMarkNewBasisAsFailed() async {
+    let service = HomeMarketFixture()
+    let history = DelayedFailingHistory()
+    let domestic = BasisSwitchFixture(symbol: "AU9999", quotePrice: 945.2, historyPrice: 942.35, gate: nil)
+    let model = MarketHomeViewModel(dailyService: service, quoteService: service, realtimeService: service, historyService: history,
+        serviceFactory: { _ in MarketHomeDataServices(daily: domestic, quote: domestic, realtime: domestic, history: domestic) })
+    await model.refresh()
+    model.range = .history
+    let loading = Task { await model.loadHistory() }
+    await history.waitForStart()
+    #expect(await model.switchBasis(to: .domestic))
+    await history.fail()
+    await loading.value
+    #expect(model.basis == .domestic)
+    #expect(model.message?.contains("失败") != true)
+    #expect(!model.points.isEmpty)
+}
+
+
+@MainActor @Test func cancelledBasisSwitchAllowsImmediateRetryBeforeTransportFinishes() async {
+    let original = HomeMarketFixture()
+    let gate = BasisSwitchGate()
+    let domestic = BasisSwitchFixture(symbol: "AU9999", quotePrice: 945.2, historyPrice: 942.35, gate: gate)
+    let model = MarketHomeViewModel(dailyService: original, quoteService: original, realtimeService: original,
+        serviceFactory: { _ in MarketHomeDataServices(daily: domestic, quote: domestic, realtime: domestic, history: domestic) })
+    await model.refresh()
+    let first = Task { await model.switchBasis(to: .domestic) }
+    for _ in 0..<1000 {
+        if model.isSwitchingBasis { break }
+        await Task.yield()
+    }
+    #expect(model.isSwitchingBasis)
+    first.cancel()
+    model.cancelBasisSwitch()
+    #expect(!model.isSwitchingBasis)
+    var commits = 0
+    let retry = Task { await model.switchBasis(to: .domestic, beforeCommit: { commits += 1 }) }
+    await gate.release()
+    #expect(await first.value == false)
+    #expect(await retry.value)
+    #expect(commits == 1)
+    #expect(model.basis == .domestic)
+    #expect(model.price == 945.2)
+    #expect(!model.isSwitchingBasis)
+}

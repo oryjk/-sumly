@@ -84,6 +84,7 @@ final class MarketHomeViewModel {
     private var quoteRequest: UUID?
     private var dailyRequest: UUID?
     private var realtimeRequest: UUID?
+    private var historyRequest: UUID?
     var chartLoading: Bool { range == .realtime ? realtimeLoading : (dailyLoading || historyLoading) }
     var loading: Bool { (quoteLoading && quote == nil) || (chartLoading && points.isEmpty) }
     private var quoteFailed = false
@@ -243,7 +244,7 @@ final class MarketHomeViewModel {
     /// 在不重建页面的情况下切换行情口径。新口径的数据准备完成前保留当前快照，
     /// 成功后在同一个 MainActor 周期内替换报价、实时走势和历史数据，避免新旧口径混用。
     @discardableResult
-    func switchBasis(to newBasis: GoldMarketBasis) async -> Bool {
+    func switchBasis(to newBasis: GoldMarketBasis, beforeCommit: @MainActor () -> Void = {}) async -> Bool {
         guard newBasis != basis else { return true }
         guard !isSwitchingBasis else { return false }
 
@@ -269,6 +270,18 @@ final class MarketHomeViewModel {
             let fetchedHistory = (try? await historyFetch) ?? []
             guard basisSwitchRequest == request, !Task.isCancelled else { return false }
 
+            guard fetchedQuote.cnyPerGram.isFinite, fetchedQuote.cnyPerGram > 0 else { return false }
+            if range == .realtime {
+                guard !Self.realtimeWindow(fetchedRealtime, now: .now).isEmpty else { return false }
+            } else {
+                if newBasis == .international {
+                    guard fetchedQuote.usdCNY.isFinite, fetchedQuote.usdCNY > 0 else { return false }
+                }
+                let usableHistory = fetchedHistory.contains { $0.price.isFinite && $0.price > 0 }
+                let usableDaily = fetchedDaily.contains { $0.close.isFinite && $0.close > 0 }
+                guard range == .history ? usableHistory : (usableHistory || usableDaily) else { return false }
+            }
+            beforeCommit()
             cacheGeneration &+= 1
             preparedKey = nil; preparedPoints = []
             scopedKey = nil; scopedRange = nil; scopedPoints = []
@@ -296,6 +309,41 @@ final class MarketHomeViewModel {
         } catch {
             return false
         }
+    }
+
+    /// Unlock immediately even when a cancelled transport is still unwinding.
+    /// The token prevents that transport from committing into a later switch.
+    func cancelBasisSwitch() {
+        basisSwitchRequest = nil
+        isSwitchingBasis = false
+    }
+
+    /// A frozen display layer for the outgoing crossfade. It never starts tasks;
+    /// arrays share storage until the live model changes them.
+    func makeDisplaySnapshot() -> MarketHomeViewModel {
+        let snapshot = MarketHomeViewModel(basis: basis, dailyService: dailyService,
+            quoteService: quoteService, realtimeService: realtimeService,
+            historyService: historyService, serviceFactory: serviceFactory)
+        snapshot.range = range
+        snapshot.priceScale = priceScale
+        snapshot.quote = quote
+        snapshot.daily = daily
+        snapshot.history = history
+        snapshot.realtime = realtime
+        snapshot.viewport = xDomain
+        snapshot.selectedDate = selectedDate
+        snapshot.quoteLoading = quoteLoading
+        snapshot.dailyLoading = dailyLoading
+        snapshot.realtimeLoading = realtimeLoading
+        snapshot.historyLoading = historyLoading
+        snapshot.quoteFailed = quoteFailed
+        snapshot.dailyFailed = dailyFailed
+        snapshot.realtimeFailed = realtimeFailed
+        snapshot.historyFailed = historyFailed
+        snapshot.historyRevision = historyRevision
+        snapshot.preparedKey = preparedKey; snapshot.preparedPoints = preparedPoints
+        snapshot.scopedKey = scopedKey; snapshot.scopedRange = scopedRange; snapshot.scopedPoints = scopedPoints
+        return snapshot
     }
 
     var fullDomain: ClosedRange<Date> {
@@ -377,20 +425,25 @@ final class MarketHomeViewModel {
     }
     func loadHistory() async {
         guard !historyLoading else { return }
+        guard !Task.isCancelled else { return }
+        let request = UUID()
+        historyRequest = request
         historyLoading = true
-        defer { historyLoading = false }
+        defer { if historyRequest == request { historyLoading = false } }
         let generation = cacheGeneration
-        if let cached = await historyService.cachedHistory(), generation == cacheGeneration { history = cached }
-        guard generation == cacheGeneration, !Task.isCancelled else { return }
+        if let cached = await historyService.cachedHistory(), generation == cacheGeneration, historyRequest == request { history = cached }
+        guard generation == cacheGeneration, historyRequest == request, !Task.isCancelled else { return }
         do {
             let fetched = try await historyService.fetchHistory()
-            guard generation == cacheGeneration, !Task.isCancelled else { return }
+            guard generation == cacheGeneration, historyRequest == request, !Task.isCancelled else { return }
             history = fetched; historyFailed = false
         }
-        catch { if !Task.isCancelled { historyFailed = true } }
+        catch { if generation == cacheGeneration, historyRequest == request, !Task.isCancelled { historyFailed = true } }
     }
 
     func clearMarketCache() {
+        cancelBasisSwitch()
+        historyRequest = nil; historyLoading = false
         cacheGeneration &+= 1
         preparedKey = nil; preparedPoints = []
         scopedKey = nil; scopedRange = nil; scopedPoints = []
