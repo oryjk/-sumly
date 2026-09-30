@@ -32,32 +32,37 @@ struct MarketHomeChartContent: View {
     }
 
     private var quoteHeader: some View {
-        VStack(spacing: 3) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("黄金价格").font(.caption.weight(.medium)).foregroundStyle(GoldTheme.goldSoft)
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text(model.price.map { $0.formatted(.number.precision(.fractionLength(2)).grouping(.never)) } ?? "—")
-                            .font(.system(size: 36, weight: .bold, design: .rounded))
-                        Text("元/克").font(.caption)
-                    }.foregroundStyle(GoldTheme.gold)
-                        .lineLimit(1).minimumScaleFactor(0.75)
-                        .accessibilityLabel("黄金价格，\(model.price.map { String(format: "%.2f", $0) } ?? "暂无报价") 元每克")
-                }
-                Spacer(minLength: 0)
-                Button { showingNotice = true } label: {
-                    Label("订阅金价", systemImage: "bell.badge").font(.caption.weight(.medium))
-                        .padding(.horizontal, 12).frame(minHeight: 44)
-                        .foregroundStyle(GoldTheme.onGold).background(GoldTheme.gold, in: GoldTheme.capsuleShape)
-                }.buttonStyle(.plain).fixedSize()
-            }
-            ZStack(alignment: .leading) {
+        VStack(spacing: 4) {
+            Text("黄金价格")
+                .font(.caption.weight(.medium)).foregroundStyle(GoldTheme.goldSoft)
+                .frame(maxWidth: .infinity)
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(model.price.map { $0.formatted(.number.precision(.fractionLength(2)).grouping(.never)) } ?? "—")
+                    .font(.system(size: 42, weight: .bold, design: .rounded))
+                Text("元/克").font(.caption)
+            }.foregroundStyle(GoldTheme.gold)
+                .lineLimit(1).minimumScaleFactor(0.75)
+                .padding(.horizontal, 44)
+                .frame(maxWidth: .infinity)
+                .accessibilityLabel("黄金价格，\(model.price.map { String(format: "%.2f", $0) } ?? "暂无报价") 元每克")
+            ZStack {
                 if let message = model.message {
                     Button(message) { Task { await model.refresh() } }
                         .font(.caption).foregroundStyle(GoldTheme.textSecondary)
                         .lineLimit(1).minimumScaleFactor(0.8)
                 }
-            }.frame(maxWidth: .infinity, minHeight: 18, maxHeight: 18, alignment: .leading)
+            }.frame(maxWidth: .infinity, minHeight: 18, maxHeight: 18)
+        }
+        .overlay(alignment: .topTrailing) {
+            Button { showingNotice = true } label: {
+                Image(systemName: "bell.badge")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(GoldTheme.goldSoft)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }.buttonStyle(.plain)
+                .accessibilityLabel("订阅金价")
+                .accessibilityIdentifier("market.subscribe")
         }
     }
 
@@ -68,7 +73,15 @@ struct MarketHomeChartContent: View {
                 HStack(spacing: 8) { scalePicker; Spacer(minLength: 0); resetButton }
             }
         } else {
-            HStack(spacing: 8) { rangeMenu; scalePicker; resetButton }
+            HStack(spacing: 6) {
+                rangeMenu
+                Rectangle().fill(GoldTheme.cardStroke).frame(width: 1, height: 22)
+                    .accessibilityHidden(true)
+                scalePicker
+                resetButton
+            }
+            .padding(.horizontal, 6)
+            .background(GoldTheme.card, in: GoldTheme.rangeShape)
         }
     }
 
@@ -83,11 +96,10 @@ struct MarketHomeChartContent: View {
             HStack(spacing: 5) {
                 Text(rangeTitle(model.range)).fontWeight(.semibold)
                 Image(systemName: "chevron.down").font(.caption2.weight(.bold))
-            }.font(.subheadline).foregroundStyle(GoldTheme.gold)
+            }.font(.subheadline).foregroundStyle(GoldTheme.goldSoft)
                 .lineLimit(1).minimumScaleFactor(0.7)
                 .padding(.horizontal, 8).frame(maxWidth: .infinity, minHeight: 44)
-                .background(GoldTheme.card, in: GoldTheme.rangeShape)
-                .overlay(GoldTheme.rangeShape.strokeBorder(GoldTheme.gold.opacity(0.5)))
+                .contentShape(Rectangle())
         }
         .accessibilityLabel("时间区间")
         .accessibilityValue(rangeTitle(model.range))
@@ -98,7 +110,7 @@ struct MarketHomeChartContent: View {
         HStack(spacing: 2) {
             ForEach(ChartPriceScale.allCases, id: \.self) { scale in
                 Button { model.priceScale = scale } label: {
-                    Text(scale.rawValue).font(.subheadline.weight(.semibold))
+                    Text(scale.rawValue).font(.system(.footnote, design: .rounded).weight(.semibold))
                         .padding(.horizontal, 8).frame(minWidth: 44, minHeight: 44)
                         .foregroundStyle(model.priceScale == scale ? GoldTheme.onGold : GoldTheme.textSecondary)
                         .background(model.priceScale == scale ? GoldTheme.gold : GoldTheme.card, in: GoldTheme.rangeShape)
@@ -113,10 +125,9 @@ struct MarketHomeChartContent: View {
     private var resetButton: some View {
         Button { model.resetViewport() } label: {
             Label("复位", systemImage: "arrow.counterclockwise")
-                .font(.subheadline.weight(.semibold)).padding(.horizontal, 8).frame(minHeight: 44)
-                .foregroundStyle(model.canReset ? GoldTheme.gold : GoldTheme.textFaint)
-                .background(GoldTheme.card, in: GoldTheme.rangeShape)
-                .overlay(GoldTheme.rangeShape.strokeBorder(model.canReset ? GoldTheme.gold : GoldTheme.cardStroke))
+                .font(.footnote.weight(.semibold)).padding(.horizontal, 8).frame(minHeight: 44)
+                .foregroundStyle(model.canReset ? GoldTheme.goldSoft : GoldTheme.textFaint)
+                .contentShape(Rectangle())
         }.buttonStyle(.plain).disabled(!model.canReset)
             .fixedSize().accessibilityIdentifier("chart.reset")
     }
