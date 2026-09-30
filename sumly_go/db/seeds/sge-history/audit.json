@@ -1,0 +1,131 @@
+{
+  "retrieved_on": "2026-09-30",
+  "instrument": "Au99.99",
+  "unit": "CNY/g",
+  "granularity": "daily",
+  "archive_listing_pages": 386,
+  "archive_records": 3851,
+  "http_failures": 0,
+  "accepted_unique_days": 3794,
+  "earliest": "2002-10-31",
+  "latest": "2023-12-29",
+  "csv_sha256": "1aaa9f8c6cbf3f98d76140122a45270fbf64ce69f9c92f9c41a169ab0d2a046d",
+  "year_counts": {
+    "2002": 43,
+    "2003": 63,
+    "2008": 96,
+    "2009": 221,
+    "2010": 229,
+    "2011": 243,
+    "2012": 241,
+    "2013": 238,
+    "2014": 243,
+    "2015": 244,
+    "2016": 241,
+    "2017": 244,
+    "2018": 240,
+    "2019": 239,
+    "2020": 242,
+    "2021": 243,
+    "2022": 242,
+    "2023": 242
+  },
+  "chart_overlap_close_matches": 1697,
+  "chart_overlap_close_mismatches": 0,
+  "new_rows_vs_before": 2114,
+  "excluded_records": 56,
+  "missing_archive_interval": [
+    "2003-04-16",
+    "2008-08-10"
+  ],
+  "unlisted_weekdays_crosscheck": [
+    "2008-08-20",
+    "2009-06-25"
+  ],
+  "date_corrections": [
+    {
+      "trading_date": "2003-03-31",
+      "listing_date": "2003-04-02",
+      "url": "https://www.sge.com.cn/sjzx/mrhqsj/509664"
+    },
+    {
+      "trading_date": "2003-04-01",
+      "listing_date": "2003-04-02",
+      "url": "https://www.sge.com.cn/sjzx/mrhqsj/509665"
+    },
+    {
+      "trading_date": "2003-04-07",
+      "listing_date": "2003-04-13",
+      "url": "https://www.sge.com.cn/sjzx/mrhqsj/509669"
+    },
+    {
+      "trading_date": "2003-04-08",
+      "listing_date": "2003-04-13",
+      "url": "https://www.sge.com.cn/sjzx/mrhqsj/509670"
+    },
+    {
+      "trading_date": "2003-04-09",
+      "listing_date": "2003-04-13",
+      "url": "https://www.sge.com.cn/sjzx/mrhqsj/509671"
+    },
+    {
+      "trading_date": "2003-04-10",
+      "listing_date": "2003-04-13",
+      "url": "https://www.sge.com.cn/sjzx/mrhqsj/509672"
+    },
+    {
+      "trading_date": "2003-04-11",
+      "listing_date": "2003-04-13",
+      "url": "https://www.sge.com.cn/sjzx/mrhqsj/509673"
+    },
+    {
+      "trading_date": "2010-08-04",
+      "listing_date": "2010-08-05",
+      "url": "https://www.sge.com.cn/sjzx/mrhqsj/510158"
+    },
+    {
+      "trading_date": "2010-08-05",
+      "listing_date": "2010-08-06",
+      "url": "https://www.sge.com.cn/sjzx/mrhqsj/510159"
+    },
+    {
+      "trading_date": "2010-08-17",
+      "listing_date": "2010-08-18",
+      "url": "https://www.sge.com.cn/sjzx/mrhqsj/510167"
+    },
+    {
+      "trading_date": "2016-03-02",
+      "listing_date": "2016-03-03",
+      "url": "https://www.sge.com.cn/sjzx/mrhqsj/535552"
+    },
+    {
+      "trading_date": "2016-08-10",
+      "listing_date": "2016-08-11",
+      "url": "https://www.sge.com.cn/sjzx/mrhqsj/540007"
+    },
+    {
+      "trading_date": "2018-05-24",
+      "listing_date": "2018-05-25",
+      "url": "https://www.sge.com.cn/sjzx/mrhqsj/5143469"
+    },
+    {
+      "trading_date": "2018-08-21",
+      "listing_date": "2018-08-22",
+      "url": "https://www.sge.com.cn/sjzx/mrhqsj/5144019"
+    },
+    {
+      "trading_date": "2018-09-12",
+      "listing_date": "2018-09-13",
+      "url": "https://www.sge.com.cn/sjzx/mrhqsj/5144143"
+    }
+  ],
+  "adjacent_price_jumps_over_10_percent": [
+    {
+      "previous_date": "2003-04-15",
+      "date": "2008-08-11",
+      "calendar_gap_days": 1945,
+      "price_difference_percent": 119.13444893248699,
+      "interpretation": "Across missing history, not a daily return"
+    }
+  ]
+}

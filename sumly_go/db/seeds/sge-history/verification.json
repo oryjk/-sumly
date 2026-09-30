@@ -1,0 +1,18 @@
+{
+  "old_count": 2356,
+  "inserted": 2114,
+  "after_count": 4470,
+  "earliest": "2002-10-31",
+  "first_price": 83.91,
+  "latest": "2026-09-28",
+  "delta_reset": false,
+  "old_data_unchanged": true,
+  "incremental_matches_full": true,
+  "cursor_revision": "10078",
+  "verified_on": "2026-09-30",
+  "sql_dry_run_rolled_back": true,
+  "sql_formal_import_committed": true,
+  "idempotent_retry_inserted": 0,
+  "idempotent_retry_history_revision_unchanged": true,
+  "source_html_verified_rows": 3794
+}
