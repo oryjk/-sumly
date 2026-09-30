@@ -6,3 +6,7 @@ sumly_ios/Sumly.xcodeproj/
 sumly_ios/build/
 xcuserdata/
 *.xcuserstate
+
+# App Store Connect API Key：只允许放在本机私有目录，禁止进入仓库
+sumly_ios/AuthKey_*.p8
+sumly_ios/.appstore-connect.env
