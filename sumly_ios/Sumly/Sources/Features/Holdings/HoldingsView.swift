@@ -78,7 +78,6 @@ struct HoldingsView: View {
             case .add: AddHoldingSheet(defaultUnitPrice: model.quote?.cnyPerGram, marketBasis: marketBasis)
             case .calendar: HoldingsCalendarSheet(initialBook: book, hideAmounts: hideAmounts, marketBasis: marketBasis)
             case .history: HoldingsHistorySheet(records: bookRecords.filter { $0.disposition != "holding" }, hideAmounts: hideAmounts)
-            case .settings: settings
             }
         }
         .sheet(item: $disposing) { record in DisposeHoldingSheet(record: record) }
@@ -148,12 +147,6 @@ struct HoldingsView: View {
         }
         .frame(maxWidth: .infinity)
         .background(GoldTheme.card, in: GoldTheme.holdingsCardShape)
-        .overlay(alignment: .topTrailing) {
-            VStack(spacing: 12) {
-                Button { sheet = .settings } label: { Image(systemName: "gearshape").font(.system(size: 17)) }.accessibilityLabel("记金设置")
-                Button { batch.toggle(); selection = [] } label: { Text(batch ? "完" : "批").font(.system(size: 11)).frame(width: 20, height: 20).overlay(GoldTheme.capsuleShape.strokeBorder(GoldTheme.textSecondary, lineWidth: 1)) }.accessibilityLabel(batch ? "完成批量管理" : "批量管理")
-            }.foregroundStyle(GoldTheme.textSecondary).padding(14)
-        }
         .buttonStyle(.plain)
         .listRowBackground(GoldTheme.background).listRowSeparator(.hidden)
     }
@@ -171,15 +164,52 @@ struct HoldingsView: View {
             .overlay(GoldTheme.capsuleShape.strokeBorder(GoldTheme.gold, lineWidth: 1)) }.buttonStyle(.plain)
     }
     private var filters: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    filterMenus
+                    Spacer(minLength: 8)
+                    batchToggle
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    filterMenus
+                    batchToggle.frame(maxWidth: .infinity, alignment: .trailing)
+                }
+            }
+            Text(batch ? "勾选记录后，可批量迁移或删除" : "左滑单条记录，可赠卖、迁移或删除")
+                .font(.caption2).foregroundStyle(GoldTheme.textSecondary)
+        }.listRowBackground(GoldTheme.background).listRowSeparator(.hidden)
+    }
+
+    private var filterMenus: some View {
         HStack(spacing: 8) {
             Menu { Picker("筛选", selection: $filter) { ForEach(HoldingFilter.allCases, id: \.self) { Text($0.rawValue).tag($0) } } } label: { filterLabel(filter == .all ? "筛选" : filter.rawValue) }
             Menu { Picker("排序", selection: $sort) { ForEach(HoldingSort.allCases, id: \.self) { Text($0.rawValue).tag($0) } } } label: { filterLabel("排序") }
-            Spacer(minLength: 2)
-            Text("*左滑可赠卖、迁移或删除").font(.system(size: 10)).foregroundStyle(GoldTheme.textSecondary).lineLimit(1).minimumScaleFactor(0.6)
-        }.listRowBackground(GoldTheme.background).listRowSeparator(.hidden)
+        }.fixedSize(horizontal: true, vertical: false)
     }
+
+    private var batchToggle: some View {
+        Button { batch.toggle(); selection = [] } label: {
+            Label(batch ? "完成" : "批量管理", systemImage: batch ? "checkmark" : "checklist")
+                .font(.system(.subheadline).weight(.semibold))
+                .padding(.horizontal, 12).frame(minWidth: 92, minHeight: 44)
+                .foregroundStyle(batch ? GoldTheme.onGold : GoldTheme.goldSoft)
+                .background(batch ? GoldTheme.gold : GoldTheme.card, in: GoldTheme.capsuleShape)
+                .overlay(GoldTheme.capsuleShape.strokeBorder(batch ? GoldTheme.gold : GoldTheme.cardStroke, lineWidth: 1))
+                .contentShape(GoldTheme.capsuleShape)
+        }
+        .buttonStyle(.plain)
+        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityLabel(batch ? "完成批量管理" : "批量管理")
+        .accessibilityHint(batch ? "退出批量管理并取消勾选" : "选择多条持仓进行迁移或删除")
+    }
+
     private func filterLabel(_ title: String) -> some View {
-        HStack(spacing: 6) { Text(title); Image(systemName: "chevron.down").font(.system(size: 10)) }.font(.system(size: 12, weight: .semibold)).foregroundStyle(GoldTheme.text).padding(.horizontal, 13).frame(height: 27).background(GoldTheme.card, in: GoldTheme.capsuleShape)
+        HStack(spacing: 6) { Text(title); Image(systemName: "chevron.down").font(.caption2) }
+            .font(.system(.subheadline).weight(.medium)).foregroundStyle(GoldTheme.text)
+            .padding(.horizontal, 13).frame(minHeight: 44)
+            .background(GoldTheme.card, in: GoldTheme.capsuleShape)
+            .contentShape(GoldTheme.capsuleShape)
     }
     private var emptyState: some View {
         VStack(spacing: 10) {
@@ -197,26 +227,11 @@ struct HoldingsView: View {
             Button("删除", role: .destructive) { deleteTargets = activeRecords.filter { selection.contains($0.id) }; showingDelete = true }.disabled(selection.isEmpty)
         }.font(.subheadline).padding(12).background(GoldTheme.card, in: GoldTheme.holdingsCardShape)
     }
-    private var settings: some View {
-        NavigationStack {
-            Form {
-                Section("估值基准") {
-                    LabeledContent("口径", value: marketBasis.title)
-                    LabeledContent("品种", value: marketBasis == .domestic ? "Au99.99" : "伦敦金")
-                    LabeledContent("来源", value: marketBasis == .domestic ? "新浪 / 上海黄金交易所" : "新浪")
-                    LabeledContent("最近报价", value: model.quote.map { "\($0.cnyPerGram.moneyText) 元/克" } ?? "暂不可用")
-                    if let quote = model.quote { Text(quote.asOf.formatted(date: .abbreviated, time: .shortened)).foregroundStyle(GoldTheme.textSecondary) }
-                }
-                Section { Text("预估价值按总克数与最新可用报价计算，实际变现金额可能包含工费、回购价差等差异。持仓记录保存在当前设备。").font(.footnote).foregroundStyle(GoldTheme.textSecondary) }
-                Toggle("隐藏金额", isOn: $hideAmounts)
-            }.navigationTitle("记金设置").navigationBarTitleDisplayMode(.inline).toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { sheet = nil } } }
-        }.presentationBackground(GoldTheme.background)
-    }
     private func mutate(_ operation: () -> Void) { operation(); do { try context.save() } catch { context.rollback(); self.error = "未能保存修改，请重试。" } }
     private func mask(_ text: String) -> String { hideAmounts ? "••••" : text }
 }
 
-enum HoldingPageSheet: String, Identifiable { case add, calendar, history, settings; var id: String { rawValue } }
+enum HoldingPageSheet: String, Identifiable { case add, calendar, history; var id: String { rawValue } }
 
 struct HoldingRowView: View {
     let record: HoldingRecord
