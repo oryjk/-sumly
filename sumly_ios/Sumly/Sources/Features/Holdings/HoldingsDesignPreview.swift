@@ -10,11 +10,11 @@ import SwiftData
         false
         #endif
     }
-    static func makeModel() -> HoldingsViewModel {
+    static func makeModel(basis: GoldMarketBasis = .domestic) -> HoldingsViewModel {
         #if DEBUG
         if isEnabled { return HoldingsViewModel(quoteService: QuoteFixture()) }
         #endif
-        return HoldingsViewModel()
+        return HoldingsViewModel(basis: basis)
     }
     static func container() throws -> ModelContainer {
         let result = try ModelContainer(for: HoldingRecord.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))

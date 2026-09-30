@@ -79,7 +79,12 @@ struct BackendGoldPriceService: GoldPriceServicing, GoldQuoteServicing, GoldIntr
         }
     }
     private func historicalPoints(_ points: [MarketSyncPoint]) -> [GoldHistoryPoint] {
-        points.filter { $0.granularity == .annual || $0.date >= "2016-01-01" }.compactMap {
+        points.filter { point in
+            if cacheSeries == "xauusd" {
+                return point.granularity == .annual || (point.granularity == .daily && point.date >= "2016-01-01")
+            }
+            return point.granularity == .daily
+        }.compactMap {
             guard let date = GoldDailyPrice.parseDay($0.date) else { return nil }
             return GoldHistoryPoint(date: date, price: $0.close, granularity: $0.granularity, source: $0.source)
         }
@@ -167,9 +172,14 @@ struct BackendGoldPriceService: GoldPriceServicing, GoldQuoteServicing, GoldIntr
         }
     }
 
+    static func realtimePath(instrumentID: String?) -> String {
+        instrumentID.map { "app/market/gold/instruments/\($0)/realtime" } ?? "app/market/gold/realtime"
+    }
+
     func fetchRealtime() async throws -> [MarketChartPoint] {
-        let dto: RealtimeDTO = try await get("app/market/gold/realtime")
-        guard dto.unit == "CNY/g", [5, 60].contains(dto.intervalSeconds), dto.windowSeconds == 1200 else {
+        let dto: RealtimeDTO = try await get(Self.realtimePath(instrumentID: instrumentID))
+        let expectedUnit = instrumentID == nil || instrumentID == "au9999" ? "CNY/g" : "USD/troy_oz"
+        guard dto.unit == expectedUnit, [5, 60].contains(dto.intervalSeconds), dto.windowSeconds == 1200 else {
             throw ServiceError.malformedPayload
         }
         // 后端明确标记五秒采样或真实分钟回退；客户端不生成缺失点。

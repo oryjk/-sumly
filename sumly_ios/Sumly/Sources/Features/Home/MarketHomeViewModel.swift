@@ -59,6 +59,7 @@ final class MarketHomeViewModel {
     }
     private var historyFailed = false
     private(set) var historyLoading = false
+    private let basis: GoldMarketBasis
     private let historyService: any GoldHistoryServicing
     private(set) var quote: GoldQuote?
     private(set) var daily: [GoldDailyPrice] = [] {
@@ -90,19 +91,22 @@ final class MarketHomeViewModel {
     @ObservationIgnored private var scopedPoints: [MarketChartPoint] = []
     private struct HistoricalPointsKey: Equatable {
         let revision: UInt
-        let fx: Double
+        let factor: Double
         let lastDay: Date
         let timeZone: TimeZone
     }
 
-    init(dailyService: any GoldPriceServicing = BackendGoldPriceService(),
-         quoteService: any GoldQuoteServicing = BackendGoldPriceService(),
-         realtimeService: any GoldRealtimeServicing = BackendGoldPriceService(),
-         historyService: any GoldHistoryServicing = BackendGoldPriceService()) {
-        self.historyService = historyService
-        self.dailyService = dailyService
-        self.quoteService = quoteService
-        self.realtimeService = realtimeService
+    init(basis: GoldMarketBasis = .international,
+         dailyService: (any GoldPriceServicing)? = nil,
+         quoteService: (any GoldQuoteServicing)? = nil,
+         realtimeService: (any GoldRealtimeServicing)? = nil,
+         historyService: (any GoldHistoryServicing)? = nil) {
+        let backend = BackendGoldPriceService(instrumentID: basis.instrumentID)
+        self.basis = basis
+        self.historyService = historyService ?? backend
+        self.dailyService = dailyService ?? backend
+        self.quoteService = quoteService ?? backend
+        self.realtimeService = realtimeService ?? backend
     }
 
     var price: Double? {
@@ -112,11 +116,17 @@ final class MarketHomeViewModel {
 
     var points: [MarketChartPoint] {
         if range == .realtime { return Self.realtimeWindow(realtime, now: .now) }
-        guard let quote, quote.usdCNY.isFinite, quote.usdCNY > 0 else { return [] }
-        let factor = quote.usdCNY / 31.1034768
+        let factor: Double
+        switch basis {
+        case .domestic:
+            factor = 1
+        case .international:
+            guard let quote, quote.usdCNY.isFinite, quote.usdCNY > 0 else { return [] }
+            factor = quote.usdCNY / 31.1034768
+        }
         let lastDay = ChartViewport.noon(Calendar.current.date(byAdding: .day, value: -1, to: .now)!)
         if history.isEmpty && range == .history { return [] }
-        let key = HistoricalPointsKey(revision: historyRevision, fx: quote.usdCNY, lastDay: lastDay, timeZone: .current)
+        let key = HistoricalPointsKey(revision: historyRevision, factor: factor, lastDay: lastDay, timeZone: .current)
         if preparedKey == key { return pointsInSelectedRange(key: key) }
         let source = history.isEmpty
             ? daily.map { MarketChartPoint(date: $0.date, price: $0.close, granularity: .daily) }
@@ -219,6 +229,9 @@ final class MarketHomeViewModel {
             let end = values.last?.date ?? .now
             let start = values.first?.date ?? end.addingTimeInterval(-1200)
             return start...max(end, start.addingTimeInterval(1))
+        }
+        if range == .history, basis == .domestic, let first = values.first?.date, let last = values.last?.date {
+            return first...last
         }
         // The selected range is the hard boundary, including navigator and date picker.
         // No completed YTD day exists on January 1. The UI shows an empty state;

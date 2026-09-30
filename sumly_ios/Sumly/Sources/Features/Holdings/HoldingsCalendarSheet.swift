@@ -4,6 +4,7 @@ import SwiftData
 struct HoldingsCalendarSheet: View {
     let initialBook: String
     let hideAmounts: Bool
+    let marketBasis: GoldMarketBasis
     @Query private var records: [HoldingRecord]
     @AppStorage("holdings.books") private var savedBooks = "默认账本"
     @Environment(\.dismiss) private var dismiss
@@ -13,7 +14,14 @@ struct HoldingsCalendarSheet: View {
     @State private var didInitialize = false
     @State private var showingFilter = false
     @State private var showingAdd = false
-    @State private var model = HoldingsDesignPreview.makeModel()
+    @State private var model: HoldingsViewModel
+    init(initialBook: String, hideAmounts: Bool, marketBasis: GoldMarketBasis = .domestic) {
+        self.initialBook = initialBook
+        self.hideAmounts = hideAmounts
+        self.marketBasis = marketBasis
+        _model = State(initialValue: HoldingsDesignPreview.makeModel(basis: marketBasis))
+    }
+
     private var events: [HoldingCalendarEvent] { HoldingCalendarLogic.events(records, filter: filter) }
     private var selected: [HoldingCalendarEvent] { HoldingCalendarLogic.select(events, period: period, date: date) }
     private var books: [String] { Array(Set(records.map(\.bookName) + savedBooks.components(separatedBy: "\n") + [initialBook])).filter { !$0.isEmpty }.sorted() }
@@ -56,7 +64,7 @@ struct HoldingsCalendarSheet: View {
         .onAppear { if !didInitialize { filter.book = initialBook; didInitialize = true } }
         .task { await model.start() }
         .sheet(isPresented: $showingFilter) { HoldingCalendarFilterSheet(filter: $filter, books: books) }
-        .sheet(isPresented: $showingAdd) { AddHoldingSheet(defaultUnitPrice: model.quote?.cnyPerGram, date: date, book: filter.book ?? initialBook) }
+        .sheet(isPresented: $showingAdd) { AddHoldingSheet(defaultUnitPrice: model.quote?.cnyPerGram, date: date, book: filter.book ?? initialBook, marketBasis: marketBasis) }
     }
     private var controls: some View {
         HStack(spacing: 8) {

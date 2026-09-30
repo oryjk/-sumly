@@ -3,11 +3,17 @@ import Charts
 
 /// 参考稿高保真布局，行情统一由 Go 服务提供。
 struct HomeView: View {
-    @State private var model = MarketHomeViewModel()
+    @Binding private var marketBasis: GoldMarketBasis
+    @State private var model: MarketHomeViewModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var showingNotice = false
     @State private var showingHistorySources = false
     @State private var showingDates = false
+
+    init(marketBasis: Binding<GoldMarketBasis>) {
+        _marketBasis = marketBasis
+        _model = State(initialValue: MarketHomeViewModel(basis: marketBasis.wrappedValue))
+    }
 
     var body: some View {
         Group {
@@ -31,12 +37,18 @@ struct HomeView: View {
             NavigationStack {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        Text("1900–2015 · 年度均价参考").font(.headline)
-                        Text("来源为 USGS Data Series 140 的名义美元金价统计，按每吨换算为每金衡盎司。1900–1967 年依据世界市场均价，1968 年起依据 Engelhard 年均报价；不是同一市场的逐日收盘序列。年度点仅用当年 7 月定位。")
-                        Link("查看 USGS 原始资料", destination: URL(string: "https://www.usgs.gov/media/files/gold-historical-statistics-data-series-140")!)
-                        Text("2016 年起 · 每日收盘价").font(.headline)
-                        Text("来源为新浪伦敦金日线，仅展示截至昨天已有的交易日收盘数据。当天报价仅在实时走势中显示。周末、休市及缺失数据不补点。")
-                        Text("图中元/克按最新美元兑人民币汇率折算，不代表当年的人民币价格，也未作通胀调整。")
+                        if marketBasis == .domestic {
+                            Text("国内 · Au99.99").font(.headline)
+                            Text("实时价格来自新浪 Au99.99 报价，历史日线来自上海黄金交易所。价格原始单位就是人民币/克，不做美元汇率换算。")
+                            Text("走势图只展示真实可用交易数据；周末、休市及缺失日期不补造价格。")
+                        } else {
+                            Text("1900–2015 · 年度均价参考").font(.headline)
+                            Text("来源为 USGS Data Series 140 的名义美元金价统计，按每吨换算为每金衡盎司。1900–1967 年依据世界市场均价，1968 年起依据 Engelhard 年均报价；不是同一市场的逐日收盘序列。年度点仅用当年 7 月定位。")
+                            Link("查看 USGS 原始资料", destination: URL(string: "https://www.usgs.gov/media/files/gold-historical-statistics-data-series-140")!)
+                            Text("2016 年起 · 每日收盘价").font(.headline)
+                            Text("来源为新浪伦敦金日线，仅展示截至昨天已有的交易日收盘数据。当天报价仅在实时走势中显示。周末、休市及缺失数据不补点。")
+                            Text("图中元/克按最新美元兑人民币汇率折算，不代表当年的人民币价格，也未作通胀调整。")
+                        }
                     }.padding(24)
                 }.background(GoldTheme.background).foregroundStyle(GoldTheme.text)
                     .navigationTitle("历史数据说明")
@@ -54,6 +66,9 @@ struct HomeView: View {
         GeometryReader { geometry in
             ScrollView {
                 VStack(spacing: 18) {
+                    marketBasisPicker
+                        .padding(.top, 8)
+
                     VStack(spacing: 6) {
                         Text("黄金价格").font(.headline).foregroundStyle(GoldTheme.goldSoft)
                         HStack(alignment: .firstTextBaseline, spacing: 4) {
@@ -77,7 +92,7 @@ struct HomeView: View {
                         Menu {
                             Picker("时间区间", selection: $model.range) {
                                 ForEach(MarketRange.allCases, id: \.self) { range in
-                                    Text(range.rawValue).tag(range)
+                                    Text(rangeTitle(range)).tag(range)
                                 }
                             }
                         } label: {
@@ -85,7 +100,7 @@ struct HomeView: View {
                                 Image(systemName: "calendar")
                                 Text("时间区间").foregroundStyle(GoldTheme.textSecondary)
                                 Spacer()
-                                Text(model.range.rawValue).fontWeight(.semibold)
+                                Text(rangeTitle(model.range)).fontWeight(.semibold)
                                 Image(systemName: "chevron.down").font(.caption.weight(.bold))
                             }
                             .font(.subheadline).foregroundStyle(GoldTheme.gold)
@@ -94,7 +109,7 @@ struct HomeView: View {
                             .overlay(GoldTheme.rangeShape.strokeBorder(GoldTheme.gold.opacity(0.5)))
                         }
                         .accessibilityLabel("时间区间")
-                        .accessibilityValue(model.range.rawValue)
+                        .accessibilityValue(rangeTitle(model.range))
                         .accessibilityIdentifier("chart.range")
                         HStack(spacing: 12) {
                             HStack(spacing: 2) {
@@ -127,7 +142,7 @@ struct HomeView: View {
                         if model.range == .realtime || model.range.dateBounds() != nil {
                             trendChart
                                 .frame(height: max(200, min(280, geometry.size.height * 0.30)))
-                                .accessibilityLabel("\(model.range.rawValue)黄金价格走势图，当前区间\(model.windowPoints.count)个行情点")
+                                .accessibilityLabel("\(rangeTitle(model.range))黄金价格走势图，当前区间\(model.windowPoints.count)个行情点")
 
                             VStack(spacing: 10) {
                                 HStack(alignment: .center) {
@@ -168,6 +183,36 @@ struct HomeView: View {
             }.scrollIndicators(.hidden).background(GoldTheme.background)
         }
     }
+    private var marketBasisPicker: some View {
+        HStack(spacing: 4) {
+            ForEach(GoldMarketBasis.allCases) { basis in
+                Button {
+                    marketBasis = basis
+                } label: {
+                    Text(basis.title)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(marketBasis == basis ? GoldTheme.onGold : GoldTheme.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 38)
+                        .background(marketBasis == basis ? GoldTheme.gold : GoldTheme.card, in: GoldTheme.capsuleShape)
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(marketBasis == basis ? .isSelected : [])
+                .accessibilityIdentifier("market.basis.\(basis.rawValue)")
+            }
+        }
+        .padding(4)
+        .frame(width: 190)
+        .background(GoldTheme.card, in: GoldTheme.capsuleShape)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("黄金数据口径")
+    }
+
+    private func rangeTitle(_ range: MarketRange) -> String {
+        if marketBasis == .domestic, range == .history { return "全部历史" }
+        return range.rawValue
+    }
+
     private var windowLabel: String {
         let window = model.xDomain
         if model.range == .realtime {
@@ -178,7 +223,9 @@ struct HomeView: View {
 
     private var chartCaption: some View {
         HStack(spacing: 8) {
-            Text(model.range == .realtime ? "元/克 · 最近 20 分钟" : "截至昨天 · 元/克 · 按最新汇率折算")
+            Text(model.range == .realtime
+                 ? "元/克 · 最近 20 分钟"
+                 : (marketBasis == .domestic ? "截至昨天 · 元/克 · Au99.99" : "截至昨天 · 元/克 · 按最新汇率折算"))
             Button { showingHistorySources = true } label: {
                 Image(systemName: "info.circle").foregroundStyle(GoldTheme.goldSoft)
             }.accessibilityLabel("历史数据说明")

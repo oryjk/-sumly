@@ -2,13 +2,14 @@ import SwiftUI
 import SwiftData
 
 struct HoldingsView: View {
+    let marketBasis: GoldMarketBasis
     @Query(sort: \HoldingRecord.timestamp, order: .reverse) private var records: [HoldingRecord]
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("holdings.currentBook") private var book = "默认账本"
     @AppStorage("holdings.books") private var savedBooks = "默认账本"
     @AppStorage("holdings.hideAmounts") private var hideAmounts = false
-    @State private var model = HoldingsDesignPreview.makeModel()
+    @State private var model: HoldingsViewModel
     @State private var search = ""
     @State private var filter = HoldingFilter.all
     @State private var sort = HoldingSort.newest
@@ -23,6 +24,11 @@ struct HoldingsView: View {
     @State private var showingTransfer = false
     @State private var disposing: HoldingRecord?
     @State private var error: String?
+
+    init(marketBasis: GoldMarketBasis = .domestic) {
+        self.marketBasis = marketBasis
+        _model = State(initialValue: HoldingsDesignPreview.makeModel(basis: marketBasis))
+    }
 
     private var books: [String] { Array(Set(savedBooks.components(separatedBy: "\n") + records.map(\.bookName) + ["默认账本"])).sorted() }
     private var bookRecords: [HoldingRecord] { records.filter { $0.bookName == book } }
@@ -69,8 +75,8 @@ struct HoldingsView: View {
         .task(id: scenePhase) { if scenePhase == .active { await model.start() } }
         .sheet(item: $sheet) { page in
             switch page {
-            case .add: AddHoldingSheet(defaultUnitPrice: model.quote?.cnyPerGram)
-            case .calendar: HoldingsCalendarSheet(initialBook: book, hideAmounts: hideAmounts)
+            case .add: AddHoldingSheet(defaultUnitPrice: model.quote?.cnyPerGram, marketBasis: marketBasis)
+            case .calendar: HoldingsCalendarSheet(initialBook: book, hideAmounts: hideAmounts, marketBasis: marketBasis)
             case .history: HoldingsHistorySheet(records: bookRecords.filter { $0.disposition != "holding" }, hideAmounts: hideAmounts)
             case .settings: settings
             }
@@ -195,8 +201,9 @@ struct HoldingsView: View {
         NavigationStack {
             Form {
                 Section("估值基准") {
-                    LabeledContent("品种", value: "国内黄金 · Au99.99")
-                    LabeledContent("来源", value: "新浪 / 上海黄金交易所")
+                    LabeledContent("口径", value: marketBasis.title)
+                    LabeledContent("品种", value: marketBasis == .domestic ? "Au99.99" : "伦敦金")
+                    LabeledContent("来源", value: marketBasis == .domestic ? "新浪 / 上海黄金交易所" : "新浪")
                     LabeledContent("最近报价", value: model.quote.map { "\($0.cnyPerGram.moneyText) 元/克" } ?? "暂不可用")
                     if let quote = model.quote { Text(quote.asOf.formatted(date: .abbreviated, time: .shortened)).foregroundStyle(GoldTheme.textSecondary) }
                 }

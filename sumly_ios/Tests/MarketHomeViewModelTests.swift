@@ -32,6 +32,31 @@ private struct HomeMarketFixture: GoldPriceServicing, GoldQuoteServicing, GoldRe
     #expect(model.points[0].price == 675.25)
 }
 
+private struct DomesticHistoryFixture: GoldHistoryServicing {
+    func fetchHistory() async throws -> [GoldHistoryPoint] {
+        [GoldHistoryPoint(date: GoldDailyPrice.parseDay("2026-09-28")!, price: 942.35, granularity: .daily, source: "sge-au9999")]
+    }
+}
+
+private struct DomesticQuoteFixture: GoldQuoteServicing {
+    func fetchQuote() async throws -> GoldQuote {
+        GoldQuote(symbol: "AU9999", price: 945.20, open: 940, high: 946, low: 938,
+                  prevClose: 941, usdCNY: 0, cnyPerGram: 945.20, asOf: .now)
+    }
+}
+
+@MainActor @Test func domesticHistoryStaysInNativeCNYPerGramWithoutFXConversion() async {
+    let service = HomeMarketFixture()
+    let model = MarketHomeViewModel(basis: .domestic, dailyService: service, quoteService: DomesticQuoteFixture(), realtimeService: service, historyService: DomesticHistoryFixture())
+    model.range = .month
+    await model.refresh()
+    #expect(model.price == 945.20)
+    #expect(model.points.count == 1)
+    #expect(model.points[0].price == 942.35)
+    model.range = .history
+    #expect(model.fullDomain.lowerBound == GoldDailyPrice.parseDay("2026-09-28")!)
+}
+
 @MainActor @Test func homeRangesUseRealDailyDates() async {
     let service = HomeMarketFixture()
     let model = MarketHomeViewModel(dailyService: service, quoteService: service, realtimeService: service)

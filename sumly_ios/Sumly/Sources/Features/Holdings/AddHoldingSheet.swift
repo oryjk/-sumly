@@ -9,6 +9,7 @@ struct AddHoldingSheet: View {
 
     /// 进入表单时的当前「元/克」价，用于预填购入单价。
     let defaultUnitPrice: Double?
+    let marketBasis: GoldMarketBasis
 
     @State private var gramsText = ""
     @State private var priceText = ""
@@ -22,10 +23,11 @@ struct AddHoldingSheet: View {
     @State private var errorMessage: String?
     @FocusState private var gramsFocused: Bool
 
-    init(defaultUnitPrice: Double?, date: Date = .now, book: String? = nil) {
+    init(defaultUnitPrice: Double?, date: Date = .now, book: String? = nil, marketBasis: GoldMarketBasis = .domestic) {
         targetBook = book
         _timestamp = State(initialValue: min(date, .now))
         self.defaultUnitPrice = defaultUnitPrice
+        self.marketBasis = marketBasis
         _priceText = State(
             initialValue: defaultUnitPrice.map { String(format: "%.2f", $0) } ?? ""
         )
@@ -89,7 +91,7 @@ struct AddHoldingSheet: View {
         .onAppear { gramsFocused = true }
         .task {
             guard defaultUnitPrice == nil, priceText.isEmpty,
-                  let quote = try? await BackendGoldPriceService(instrumentID: "au9999").fetchQuote(), quote.cnyPerGram > 0,
+                  let quote = try? await BackendGoldPriceService(instrumentID: marketBasis.instrumentID).fetchQuote(), quote.cnyPerGram > 0,
                   priceText.isEmpty else { return }
             priceText = String(format: "%.2f", quote.cnyPerGram)
         }

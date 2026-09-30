@@ -17,6 +17,10 @@ final class HoldingsViewModel {
         self.quoteService = quoteService
     }
 
+    convenience init(basis: GoldMarketBasis) {
+        self.init(quoteService: BackendGoldPriceService(instrumentID: basis.instrumentID))
+    }
+
     /// 页面入口：立即取一次报价，随后每 3 秒轮询；视图销毁自动取消。
     func start() async {
         await pollQuote()

@@ -75,3 +75,15 @@ import Foundation
         #expect(throws: BackendGoldPriceService.ServiceError.malformedPayload) { try BackendGoldPriceService.decodeHistory(dto) }
     }
 }
+
+@Test func marketBasisUsesDomesticAndInternationalUserFacingNames() {
+    #expect(GoldMarketBasis.domestic.title == "国内")
+    #expect(GoldMarketBasis.domestic.instrumentID == "au9999")
+    #expect(GoldMarketBasis.international.title == "国际")
+    #expect(GoldMarketBasis.international.instrumentID == nil)
+}
+
+@Test func realtimeEndpointFollowsSelectedMarketBasis() {
+    #expect(BackendGoldPriceService.realtimePath(instrumentID: "au9999") == "app/market/gold/instruments/au9999/realtime")
+    #expect(BackendGoldPriceService.realtimePath(instrumentID: nil) == "app/market/gold/realtime")
+}

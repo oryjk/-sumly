@@ -29,8 +29,20 @@ private struct GoldRootView: View {
     @State private var selectedTab = HoldingsDesignPreview.isEnabled ? 1 : 0
     @Environment(\.scenePhase) private var scenePhase
     @State private var session = AuthSession(service: NativeAuthService(baseURL: BackendGoldPriceService.defaultBaseURL), store: KeychainCredentialStore())
+    @AppStorage("market.basis") private var marketBasisRaw = GoldMarketBasis.domestic.rawValue
     @State private var showingAdd = false
     @State private var showingNotice = false
+
+    private var marketBasis: GoldMarketBasis {
+        GoldMarketBasis(rawValue: marketBasisRaw) ?? .domestic
+    }
+
+    private var marketBasisBinding: Binding<GoldMarketBasis> {
+        Binding(
+            get: { GoldMarketBasis(rawValue: marketBasisRaw) ?? .domestic },
+            set: { marketBasisRaw = $0.rawValue }
+        )
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -38,12 +50,14 @@ private struct GoldRootView: View {
             ZStack(alignment: .bottom) {
                 GoldTheme.background.ignoresSafeArea()
                 if selectedTab == 0 {
-                    HomeView()
+                    HomeView(marketBasis: marketBasisBinding)
+                        .id(marketBasis.rawValue)
                 } else if selectedTab == 3 {
                     AccountView(session: session)
                         .padding(.bottom, 80 * scale)
                 } else {
-                    HoldingsView()
+                    HoldingsView(marketBasis: marketBasis)
+                        .id(marketBasis.rawValue)
                         .padding(.bottom, 80 * scale)
                 }
                 tabBar(scale: scale)
@@ -52,7 +66,7 @@ private struct GoldRootView: View {
             .ignoresSafeArea(edges: .bottom)
         }
         .sheet(isPresented: $showingAdd) {
-            AddHoldingSheet(defaultUnitPrice: nil)
+            AddHoldingSheet(defaultUnitPrice: nil, marketBasis: marketBasis)
         }
         .alert("功能尚未接入", isPresented: $showingNotice) {
             Button("知道了", role: .cancel) {}
