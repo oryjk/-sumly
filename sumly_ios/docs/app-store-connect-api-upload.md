@@ -55,7 +55,18 @@ make upload
 
 1. 读取当前 `project.yml` 生成的版本号和 build number。
 2. 使用 API Key 进行 Release Archive。
-3. 使用同一 API Key 自动签名并上传到 App Store Connect。
+3. 使用本机 Apple Distribution 证书和匹配的 App Store 描述文件签名，通过 API Key 上传到 App Store Connect。
 4. 保持项目中的 build number，不让上传流程自动改号。
 
 入口脚本：`scripts/upload_app_store.sh`。
+
+## 分发签名
+
+当前 API Key 可以管理证书和描述文件，但云签名请求返回 403，因此导出采用本地签名。
+
+- 登录钥匙串已安装 `Apple Distribution: RUI WANG (237PA3LEYJ)`。
+- 本机已安装 `Sumly API App Store Distribution` 描述文件，匹配 `com.oryjk.sumly`。
+- 证书私钥保存在仓库外 `~/.private_keys/sumly-distribution/`，目录权限 `700`，私钥权限 `600`。
+- 证书与描述文件于 2027-09-30 到期；更换证书后需要同步更新 `ExportOptions-upload.plist` 中的证书指纹。
+
+换电脑时需要安装匹配的证书私钥及描述文件；仅复制 API Key 不能完成本地签名。

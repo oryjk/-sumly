@@ -9,7 +9,14 @@
     <key>method</key>
     <string>app-store-connect</string>
     <key>signingStyle</key>
-    <string>automatic</string>
+    <string>manual</string>
+    <key>signingCertificate</key>
+    <string>C149809716917E23E0EF02CFAFC9F9D1DD324F6B</string>
+    <key>provisioningProfiles</key>
+    <dict>
+        <key>com.oryjk.sumly</key>
+        <string>Sumly API App Store Distribution</string>
+    </dict>
     <key>stripSwiftSymbols</key>
     <true/>
     <key>teamID</key>
