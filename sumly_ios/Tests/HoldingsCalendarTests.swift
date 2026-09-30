@@ -16,7 +16,7 @@ import Testing
         let records = try context.fetch(FetchDescriptor<HoldingRecord>())
         let events = HoldingCalendarLogic.events(records, filter: .init())
         let purchases = HoldingCalendarLogic.select(events, period: .day, date: date(15), calendar: cal)
-        let stats = HoldingCalendarLogic.stats(purchases, quote: 200)
+        let stats = HoldingCalendarLogic.stats(purchases, quote: 200).purchases
         #expect(stats.count == 1)
         #expect(stats.grams == 6)
         #expect(stats.fees == 60)
@@ -45,6 +45,6 @@ import Testing
         let events = HoldingCalendarLogic.events([record], filter: .init())
         #expect(HoldingCalendarLogic.select(events, period: .month, date: date(15), calendar: cal).isEmpty)
         #expect(HoldingCalendarLogic.select(events, period: .year, date: date(15), calendar: cal).count == 1)
-        #expect(HoldingCalendarLogic.stats(events, quote: nil).profitPercent == nil)
+        #expect(HoldingCalendarLogic.stats(events, quote: nil).purchases.profitPercent == nil)
     }
 }

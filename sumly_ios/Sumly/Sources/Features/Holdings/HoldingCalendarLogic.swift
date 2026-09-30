@@ -17,15 +17,22 @@ struct HoldingCalendarEvent: Identifiable {
     var proceeds: Double
     var title: String
 }
-struct HoldingCalendarSummary {
+struct HoldingCalendarCategorySummary {
     var count: Int
     var grams: Double
     var fees: Double
     var cost: Double
     var average: Double
+    var proceeds: Double
+    var saleAverage: Double
+    var value: Double?
+    var profit: Double?
     var profitPercent: Double?
-    var sold: Double
-    var gifted: Double
+}
+struct HoldingCalendarSummary {
+    var purchases: HoldingCalendarCategorySummary
+    var sales: HoldingCalendarCategorySummary
+    var gifts: HoldingCalendarCategorySummary
 }
 /// 日历按事件日期汇总；拆分持仓共享购入编号，购入件数不会因赠卖增加。
 enum HoldingCalendarLogic {
@@ -60,13 +67,24 @@ enum HoldingCalendarLogic {
         }
     }
     static func stats(_ events: [HoldingCalendarEvent], quote: Double?) -> HoldingCalendarSummary {
-        let buys = events.filter { $0.kind == "buy" }
-        let grams = buys.reduce(0) { $0 + $1.grams }
-        let cost = buys.reduce(0) { $0 + $1.cost }
-        let fees = buys.reduce(0) { $0 + $1.fees }
-        let profit = quote.flatMap { $0.isFinite && $0 > 0 && cost > 0 ? (grams * $0 - cost) / cost * 100 : nil }
-        return .init(count: Set(buys.map(\.purchaseID)).count, grams: grams, fees: fees, cost: cost, average: grams > 0 ? (cost - fees) / grams : 0, profitPercent: profit,
-                     sold: events.filter { $0.kind == "sold" }.reduce(0) { $0 + $1.grams }, gifted: events.filter { $0.kind == "gift" }.reduce(0) { $0 + $1.grams })
+        .init(purchases: categoryStats(events, kind: "buy", quote: quote),
+              sales: categoryStats(events, kind: "sold", quote: quote),
+              gifts: categoryStats(events, kind: "gift", quote: quote))
+    }
+    private static func categoryStats(_ events: [HoldingCalendarEvent], kind: String, quote: Double?) -> HoldingCalendarCategorySummary {
+        let matching = events.filter { $0.kind == kind }
+        let grams = matching.reduce(0) { $0 + $1.grams }
+        let cost = matching.reduce(0) { $0 + $1.cost }
+        let fees = matching.reduce(0) { $0 + $1.fees }
+        let proceeds = matching.reduce(0) { $0 + $1.proceeds }
+        let value = quote.flatMap { $0.isFinite && $0 > 0 && grams > 0 ? grams * $0 : nil }
+        // 卖出收益按实际收入计算，不受当前金价影响；赠送不计算投资收益。
+        let profit: Double? = matching.isEmpty || kind == "gift" ? nil : kind == "sold" ? proceeds - cost : value.map { $0 - cost }
+        let percent = profit.flatMap { cost > 0 ? $0 / cost * 100 : nil }
+        return .init(count: kind == "buy" ? Set(matching.map(\.purchaseID)).count : matching.count,
+                     grams: grams, fees: fees, cost: cost, average: grams > 0 ? (cost - fees) / grams : 0,
+                     proceeds: proceeds, saleAverage: grams > 0 ? proceeds / grams : 0,
+                     value: value, profit: profit, profitPercent: percent)
     }
     static func lunar(_ date: Date) -> String {
         let calendar = Calendar(identifier: .chinese)
